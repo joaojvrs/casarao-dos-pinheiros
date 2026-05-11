@@ -75,7 +75,7 @@ export const Hero: React.FC = () => {
           className="mb-6"
         >
           <span className="text-white uppercase tracking-[0.4em] text-xs font-medium drop-shadow-md">
-            Bem-vindo ao Casarão dos Pinheiros
+            Bem-vindo ao Casarão Vale do Eden Reserva
           </span>
         </motion.div>
 
@@ -86,7 +86,7 @@ export const Hero: React.FC = () => {
           className="font-serif text-6xl md:text-8xl lg:text-9xl mb-8 leading-tight text-white drop-shadow-2xl"
         >
           Casarão <br />
-          <span className="italic font-light opacity-80">dos Pinheiros</span>
+          <span className="italic font-light opacity-80">Vale do Eden Reserva</span>
         </motion.h1>
 
         <motion.p

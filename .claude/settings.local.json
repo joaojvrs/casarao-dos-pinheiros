@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./node_modules/.bin/tsc --noEmit)",
+      "Bash(cd \"/c/Users/Pc/Documents/Casarao dos Pinheiros/casarao-dos-pinheiros\" && ls node_modules/.bin/ | grep -E \"vite|tsc\" | head -10)",
+      "Read(//c/c/Users/Pc/Documents/Casarao dos Pinheiros/casarao-dos-pinheiros/node_modules/**)",
+      "Bash(Get-ChildItem \"c:\\\\Users\\\\Pc\\\\Documents\\\\Casarao dos Pinheiros\\\\casarao-dos-pinheiros\\\\public\" -Recurse)",
+      "Bash(Select-Object FullName, Name)",
+      "Bash(Format-Table)"
+    ]
+  }
+}

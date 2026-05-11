@@ -12,12 +12,12 @@ export const Concierge: React.FC = () => {
       <div className="container mx-auto px-6 relative z-10">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-20 items-center">
           <div>
-            <span className="text-brown/60 uppercase tracking-[0.4em] text-[10px] font-bold mb-6 block">Concierge Digital</span>
+            <span className="text-forest uppercase tracking-[0.4em] text-[10px] font-bold mb-6 block">Concierge Digital</span>
             <h2 className="font-serif text-5xl md:text-7xl mb-8 leading-tight italic text-brown">
               Desenhe seu <br /> <span className="not-italic opacity-40 text-brown">Legado.</span>
             </h2>
             <p className="text-brown/50 text-lg leading-relaxed font-light mb-12 max-w-md">
-              Nossa interface inteligente processa seus desejos para criar uma estadia sob medida no Casarão dos Pinheiros.
+              Nossa interface inteligente processa seus desejos para criar uma estadia sob medida no Casarão Vale do Eden Reserva.
             </p>
 
             <div className="space-y-8">
@@ -98,7 +98,7 @@ export const Concierge: React.FC = () => {
                </button>
                
                <p className="text-[8px] uppercase tracking-[0.2em] text-brown/30 text-center mt-6">
-                 Processamento via rede segura Pinheiros Cloud
+                 Processamento via rede segura Vale do Eden Cloud
                </p>
              </form>
           </div>

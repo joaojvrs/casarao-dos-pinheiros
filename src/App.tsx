@@ -9,6 +9,7 @@ import { PortalLoader } from './components/ui/PortalLoader';
 import { Navbar } from './components/layout/Navbar';
 import { Hero } from './components/sections/Hero';
 import { Accommodations } from './components/sections/Accommodations';
+import { Experiences } from './components/sections/Experiences';
 import { SensoryMap } from './components/sections/SensoryMap';
 import { Gallery } from './components/sections/Gallery';
 import { Timeline } from './components/sections/Timeline';
@@ -26,6 +27,7 @@ export default function App() {
         <main>
           <Hero />
           <Accommodations />
+          <Experiences />
           <SensoryMap />
           <Gallery />
           <Timeline />
@@ -36,9 +38,9 @@ export default function App() {
         <footer className="py-20 px-6 border-t border-white/5 bg-black">
           <div className="container mx-auto grid grid-cols-1 md:grid-cols-4 gap-12 text-center md:text-left">
             <div className="md:col-span-2">
-              <h2 className="font-serif text-4xl text-brown mb-6 italic">Pinheiros.</h2>
+              <h2 className="font-serif text-4xl text-brown mb-6 italic">Vale do Eden.</h2>
               <p className="text-brown/60 max-w-sm text-sm">
-                Uma fusão entre a tecnologia de ponta e a harmonia da Mata de Pinheiros. 
+                Uma fusão entre a tecnologia de ponta e a harmonia do Vale do Eden.
                 Sua jornada de luxo e reconexão começa aqui.
               </p>
             </div>
@@ -61,7 +63,7 @@ export default function App() {
             </div>
           </div>
           <div className="mt-20 pt-8 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-4 text-[10px] uppercase tracking-widest text-mist/20">
-            <span>© 2026 Casarão dos Pinheiros. All rights Reserved.</span>
+            <span>© 2026 Casarão Vale do Eden Reserva. All rights Reserved.</span>
             <span>Made with Visionary Excellence</span>
           </div>
         </footer>
