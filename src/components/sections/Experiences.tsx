@@ -17,6 +17,7 @@ interface Experience {
   title: string;
   tagline: string;
   description: string;
+  image: string;
   Icon: React.FC<{ size?: number; className?: string; style?: React.CSSProperties }>;
 }
 
@@ -27,6 +28,7 @@ const EXPERIENCES: Experience[] = [
     tagline: 'Espiritualidade & Contemplação',
     description:
       'Uma linda Capela construída com pedras rústicas — um espaço de recolhimento e paz, inserido harmoniosamente na natureza preservada da propriedade.',
+    image: 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=600&q=80',
     Icon: Church,
   },
   {
@@ -35,6 +37,7 @@ const EXPERIENCES: Experience[] = [
     tagline: 'Relaxamento em todas as estações',
     description:
       'Desfrute de momentos de descanso em nossas piscinas aquecidas, cercadas pela natureza e perfeitas para qualquer clima durante todo o ano.',
+    image: 'https://images.unsplash.com/photo-1575429198097-0414ec08e8cd?auto=format&fit=crop&w=600&q=80',
     Icon: Waves,
   },
   {
@@ -43,6 +46,7 @@ const EXPERIENCES: Experience[] = [
     tagline: 'Equilíbrio para corpo e mente',
     description:
       'Um momento de paz e cuidado com técnicas que aliviam tensões e renovam suas energias. Bem-estar em plena conexão com a natureza.',
+    image: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?auto=format&fit=crop&w=600&q=80',
     Icon: Sparkles,
   },
   {
@@ -51,6 +55,7 @@ const EXPERIENCES: Experience[] = [
     tagline: 'Diversão & Energia ao ar livre',
     description:
       'Um espaço perfeito para se divertir com amigos e praticar esportes ao ar livre, cercado por natureza, ar fresco e boas vibrações.',
+    image: 'https://images.unsplash.com/photo-1554068865-24cecd4e34b8?auto=format&fit=crop&w=600&q=80',
     Icon: Users,
   },
   {
@@ -59,6 +64,7 @@ const EXPERIENCES: Experience[] = [
     tagline: 'Aventura em meio à natureza',
     description:
       'Sinta a emoção de explorar trilhas e paisagens incríveis em um passeio cheio de adrenalina, liberdade e contato direto com a mata.',
+    image: 'https://images.unsplash.com/photo-1675428604186-a165487f857c?auto=format&fit=crop&w=600&q=80',
     Icon: Zap,
   },
   {
@@ -67,6 +73,7 @@ const EXPERIENCES: Experience[] = [
     tagline: 'Beleza e frescor natural',
     description:
       'Lagos tranquilos e cachoeiras cristalinas esperam por você. Um convite irresistível para se refrescar e contemplar paisagens encantadoras.',
+    image: 'https://images.unsplash.com/photo-1552083375-1447ce886485?auto=format&fit=crop&w=600&q=80',
     Icon: Mountain,
   },
   {
@@ -75,6 +82,7 @@ const EXPERIENCES: Experience[] = [
     tagline: 'Liberdade sobre as águas',
     description:
       'Viva a sensação de deslizar pelas águas em meio à natureza. Uma atividade leve, divertida e perfeita para hóspedes de todas as idades.',
+    image: 'https://images.unsplash.com/photo-1530053969600-caed2596d242?auto=format&fit=crop&w=600&q=80',
     Icon: Anchor,
   },
   {
@@ -83,6 +91,7 @@ const EXPERIENCES: Experience[] = [
     tagline: 'Conecte-se com a natureza',
     description:
       'Um momento de lazer e tranquilidade à beira do lago, onde a paciência se transforma em prazer e cada captura é uma nova emoção.',
+    image: 'https://images.unsplash.com/photo-1712251791130-a1918694810a?auto=format&fit=crop&w=600&q=80',
     Icon: Fish,
   },
   {
@@ -91,6 +100,7 @@ const EXPERIENCES: Experience[] = [
     tagline: 'Refúgio de águas cristalinas',
     description:
       'Desfrute de águas tranquilas cercadas por verde e paisagens que renovam corpo e mente. A natureza em seu estado mais puro e intocado.',
+    image: 'https://images.unsplash.com/photo-1616958084176-f75ddc962dc1?auto=format&fit=crop&w=600&q=80',
     Icon: Droplets,
   },
 ];
@@ -139,7 +149,7 @@ export const Experiences: React.FC = () => {
           className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-px"
           style={{ background: 'rgba(26,15,10,0.07)' }}
         >
-          {EXPERIENCES.map(({ id, title, tagline, description, Icon }, i) => (
+          {EXPERIENCES.map(({ id, title, tagline, description, image, Icon }, i) => (
             <motion.div
               key={id}
               initial={{ opacity: 0, y: 32 }}
@@ -150,44 +160,56 @@ export const Experiences: React.FC = () => {
                 ease: [0.22, 1, 0.36, 1] as [number, number, number, number],
               }}
               viewport={{ once: true, margin: '-60px' }}
-              className="group bg-beige flex flex-col gap-7 p-10 xl:p-12 hover:bg-brown/[0.025] transition-colors duration-500 cursor-default"
+              className="group bg-beige flex flex-col hover:bg-brown/[0.025] transition-colors duration-500 cursor-default overflow-hidden"
             >
-              {/* Top row: number + icon */}
-              <div className="flex items-start justify-between">
-                <span className="font-mono text-[11px] text-brown/22 tracking-widest select-none">
-                  {id}
-                </span>
+              {/* Experience image */}
+              <div className="relative h-44 overflow-hidden">
+                <img
+                  src={image}
+                  alt={title}
+                  loading="lazy"
+                  className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-beige via-transparent to-transparent" />
                 <div
-                  className="w-10 h-10 flex items-center justify-center rounded-xl transition-transform duration-500 group-hover:scale-110 group-hover:rotate-3"
-                  style={{ background: 'rgba(195,163,122,0.12)' }}
+                  className="absolute top-3 right-3 w-8 h-8 flex items-center justify-center rounded-lg transition-transform duration-500 group-hover:scale-110 group-hover:rotate-3"
+                  style={{ background: 'rgba(252,249,242,0.88)', backdropFilter: 'blur(8px)' }}
                 >
-                  <Icon size={18} style={{ color: '#c3a37a' }} />
+                  <Icon size={15} style={{ color: '#c3a37a' }} />
                 </div>
               </div>
 
-              {/* Gold accent line */}
-              <motion.div
-                className="h-px w-8"
-                style={{ background: '#c3a37a' }}
-                initial={{ scaleX: 0, originX: 0 }}
-                whileInView={{ scaleX: 1 }}
-                transition={{ duration: 0.6, delay: 0.3 + (i % 3) * 0.1, ease: [0.22, 1, 0.36, 1] }}
-                viewport={{ once: true }}
-              />
+              {/* Card body */}
+              <div className="flex flex-col gap-5 p-8 xl:p-10 flex-1">
+                {/* Number + accent line */}
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-[11px] text-brown/22 tracking-widest select-none">
+                    {id}
+                  </span>
+                  <motion.div
+                    className="h-px w-8"
+                    style={{ background: '#c3a37a' }}
+                    initial={{ scaleX: 0, originX: 0 }}
+                    whileInView={{ scaleX: 1 }}
+                    transition={{ duration: 0.6, delay: 0.3 + (i % 3) * 0.1, ease: [0.22, 1, 0.36, 1] }}
+                    viewport={{ once: true }}
+                  />
+                </div>
 
-              {/* Text block */}
-              <div className="flex flex-col gap-2">
-                <span className="text-[9px] uppercase tracking-[0.38em] text-brown/30 font-bold">
-                  {tagline}
-                </span>
-                <h3 className="font-serif text-2xl text-brown leading-snug group-hover:text-brown/85 transition-colors">
-                  {title}
-                </h3>
+                {/* Text block */}
+                <div className="flex flex-col gap-2">
+                  <span className="text-[9px] uppercase tracking-[0.38em] text-brown/30 font-bold">
+                    {tagline}
+                  </span>
+                  <h3 className="font-serif text-2xl text-brown leading-snug group-hover:text-brown/85 transition-colors">
+                    {title}
+                  </h3>
+                </div>
+
+                <p className="text-brown/50 text-sm leading-relaxed flex-1 group-hover:text-brown/65 transition-colors">
+                  {description}
+                </p>
               </div>
-
-              <p className="text-brown/50 text-sm leading-relaxed flex-1 group-hover:text-brown/65 transition-colors">
-                {description}
-              </p>
             </motion.div>
           ))}
         </div>

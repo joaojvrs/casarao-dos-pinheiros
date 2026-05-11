@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
 import { motion, useScroll, useTransform, useSpring, useInView } from 'motion/react';
-import { Sunrise, Waves, Moon, Church, Zap, Mountain, Anchor, Sparkles, Fish } from 'lucide-react';
+import { Sunrise, Waves, Moon, Church, Zap, Mountain, Anchor, Sparkles, Fish, UtensilsCrossed } from 'lucide-react';
 
 // All accents drawn from the site palette: gold (#c3a37a), mist (#e8e2d9), forest (#3a6b4a)
 const STEPS = [
@@ -21,6 +21,12 @@ const STEPS = [
     accent: '#e8d5b0', glow: 'rgba(232,213,176,0.12)', glowS: 'rgba(232,213,176,0.28)',
     title: 'Aventura de Quadriciclo',
     desc: 'Exploração das trilhas e paisagens da reserva em um passeio cheio de adrenalina e liberdade.',
+  },
+  {
+    id: 10, time: '12:30', icon: UtensilsCrossed,
+    accent: '#c8a880', glow: 'rgba(200,168,128,0.14)', glowS: 'rgba(200,168,128,0.32)',
+    title: 'Almoço com o MasterChef',
+    desc: 'Uma experiência gastronômica exclusiva e intimista. Nosso chef cria um menu especial ao vivo, com ingredientes frescos e sabores que contam a história do lugar.',
   },
   {
     id: 4, time: '13:00', icon: Mountain,

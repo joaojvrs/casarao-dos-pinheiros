@@ -40,7 +40,11 @@ function ParticleField() {
   );
 }
 
-export const Hero: React.FC = () => {
+interface HeroProps {
+  onWeddingClick?: () => void;
+}
+
+export const Hero: React.FC<HeroProps> = ({ onWeddingClick }) => {
   return (
     <section className="relative h-screen w-full overflow-hidden flex items-center justify-center bg-beige">
       {/* Background Video */}
@@ -105,7 +109,7 @@ export const Hero: React.FC = () => {
           transition={{ duration: 1, delay: 1.5 }}
           className="flex flex-col items-center gap-4"
         >
-          <button 
+          <button
             data-hover="reservar"
             className="group relative px-10 py-4 overflow-hidden border border-white/30 rounded-full transition-all hover:border-white"
           >
@@ -114,6 +118,33 @@ export const Hero: React.FC = () => {
             </span>
             <div className="absolute inset-0 bg-white translate-y-full group-hover:translate-y-0 transition-transform duration-500 ease-out z-0" />
           </button>
+
+          {onWeddingClick && (
+            <motion.button
+              onClick={onWeddingClick}
+              data-hover="casamento"
+              className="group relative px-10 py-4 overflow-hidden border rounded-full transition-all"
+              style={{ borderColor: 'rgba(195,163,122,0.45)' }}
+              whileHover={{ borderColor: 'rgba(195,163,122,0.9)' }}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 1, delay: 1.8 }}
+            >
+              <span
+                className="relative z-10 text-xs uppercase tracking-[0.2em] font-medium transition-colors duration-400"
+                style={{ color: 'rgba(195,163,122,0.85)' }}
+              >
+                ✦ Casamentos na Chapel
+              </span>
+              <motion.div
+                className="absolute inset-0 origin-bottom"
+                style={{ background: 'rgba(195,163,122,0.92)' }}
+                initial={{ scaleY: 0 }}
+                whileHover={{ scaleY: 1 }}
+                transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+              />
+            </motion.button>
+          )}
           
           <div className="mt-20 animate-bounce text-white/30">
             <div className="w-[1px] h-12 bg-gradient-to-b from-white/0 to-white mx-auto" />

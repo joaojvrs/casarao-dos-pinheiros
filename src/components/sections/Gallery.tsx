@@ -43,7 +43,7 @@ const IMAGES = [
 export const Gallery: React.FC = () => {
   return (
     <section className="py-32 bg-white overflow-hidden relative">
-      <div className="container mx-auto px-6 mb-16 text-center md:text-left">
+      <div className="container mx-auto px-6 mb-16 text-center">
         <span className="text-forest uppercase tracking-[0.4em] text-[10px] font-bold mb-4 block">
           Memória Visual
         </span>

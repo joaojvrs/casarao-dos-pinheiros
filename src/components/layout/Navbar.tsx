@@ -2,7 +2,11 @@ import React, { useState } from 'react';
 import { motion, useScroll, useMotionValueEvent } from 'motion/react';
 import { Menu, User } from 'lucide-react';
 
-export const Navbar: React.FC = () => {
+interface NavbarProps {
+  onWeddingClick?: () => void;
+}
+
+export const Navbar: React.FC<NavbarProps> = ({ onWeddingClick }) => {
   const [scrolled, setScrolled] = useState(false);
   const { scrollY } = useScroll();
 
@@ -80,8 +84,28 @@ export const Navbar: React.FC = () => {
           />
         </motion.div>
 
-        {/* Right — user + reservar */}
+        {/* Right — casamentos + user + reservar */}
         <div className="flex items-center gap-3">
+          {onWeddingClick && (
+            <motion.button
+              onClick={onWeddingClick}
+              className="hidden md:flex items-center gap-1.5 px-4 py-[7px] rounded-full text-[10px] uppercase tracking-widest font-medium border transition-all duration-300"
+              animate={{
+                borderColor: scrolled ? 'rgba(195,163,122,0.2)' : 'rgba(255,255,255,0.1)',
+                color: 'rgba(195,163,122,0.75)',
+              }}
+              whileHover={{
+                borderColor: 'rgba(195,163,122,0.65)',
+                color: 'rgb(195,163,122)',
+                backgroundColor: 'rgba(195,163,122,0.08)',
+              }}
+              transition={{ duration: 0.3 }}
+            >
+              <span style={{ fontSize: 9 }}>✦</span>
+              Casamentos
+            </motion.button>
+          )}
+
           <motion.button
             data-hover="perfil"
             className="flex items-center justify-center w-9 h-9 rounded-full border transition-all duration-300"

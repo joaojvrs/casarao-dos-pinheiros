@@ -6,7 +6,10 @@
       "Read(//c/c/Users/Pc/Documents/Casarao dos Pinheiros/casarao-dos-pinheiros/node_modules/**)",
       "Bash(Get-ChildItem \"c:\\\\Users\\\\Pc\\\\Documents\\\\Casarao dos Pinheiros\\\\casarao-dos-pinheiros\\\\public\" -Recurse)",
       "Bash(Select-Object FullName, Name)",
-      "Bash(Format-Table)"
+      "Bash(Format-Table)",
+      "Bash(npm run *)",
+      "WebSearch",
+      "WebFetch(domain:unsplash.com)"
     ]
   }
 }

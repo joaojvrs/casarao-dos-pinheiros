@@ -495,10 +495,10 @@ export const Accommodations: React.FC = () => {
           <div className="panel w-screen h-screen flex items-center justify-center px-6 md:px-20">
             <div className="max-w-4xl">
               <span className="text-forest uppercase tracking-[0.4em] text-[10px] font-bold mb-6 block">
-                Acomodações
+                Origem
               </span>
               <h2 className="accomm-title font-serif text-5xl md:text-7xl lg:text-8xl italic mb-8 text-brown">
-                Estações de <br /> Reconexão.
+                onde se volta ao <br /> princípio de tudo.
               </h2>
               <p className="text-brown/40 max-w-lg text-lg leading-relaxed">
                 Cada espaço foi desenhado como um portal individual, unindo engenharia sustentável com o
