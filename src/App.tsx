@@ -3,11 +3,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState } from 'react';
+import { useState, lazy, Suspense } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { SmoothScroll } from './components/layout/SmoothScroll';
 import { CustomCursor } from './components/ui/CustomCursor';
 import { PortalLoader } from './components/ui/PortalLoader';
+import { SplashScreen } from './components/ui/SplashScreen';
 import { Navbar } from './components/layout/Navbar';
 import { Hero } from './components/sections/Hero';
 import { Accommodations } from './components/sections/Accommodations';
@@ -18,14 +19,17 @@ import { Timeline } from './components/sections/Timeline';
 import { Concierge } from './components/sections/Concierge';
 import { FinalSection } from './components/sections/FinalSection';
 import { WeddingTeaser } from './components/sections/WeddingTeaser';
-import { WeddingModule } from './pages/WeddingModule';
+
+const WeddingModule = lazy(() => import('./pages/WeddingModule').then(module => ({ default: module.WeddingModule })));
 
 export default function App() {
   const [page, setPage] = useState<'home' | 'wedding'>('home');
+  const [splashDone, setSplashDone] = useState(false);
 
   return (
     <SmoothScroll>
-      <div className="bg-beige text-brown min-h-screen selection:bg-brown selection:text-white">
+      <div className="bg-beige text-brown min-h-screen selection:bg-brown selection:text-white font-sans font-light">
+        {!splashDone && <SplashScreen onComplete={() => setSplashDone(true)} />}
         <PortalLoader />
         <CustomCursor />
 
@@ -38,7 +42,9 @@ export default function App() {
               exit={{ opacity: 0 }}
               transition={{ duration: 0.45 }}
             >
-              <WeddingModule onBack={() => setPage('home')} />
+              <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-beige"><div className="w-8 h-8 border-4 border-gold border-t-transparent rounded-full animate-spin"></div></div>}>
+                <WeddingModule onBack={() => setPage('home')} />
+              </Suspense>
             </motion.div>
           ) : (
             <motion.div
@@ -62,40 +68,40 @@ export default function App() {
                 <FinalSection />
               </main>
 
-              <footer className="py-20 px-6 border-t border-white/5 bg-black">
-                <div className="container mx-auto grid grid-cols-1 md:grid-cols-4 gap-12 text-center md:text-left">
-                  <div className="md:col-span-2">
-                    <h2 className="font-serif text-4xl text-brown mb-6 italic">Vale do Eden.</h2>
-                    <p className="text-brown/60 max-w-sm text-sm">
-                      Uma fusão entre a tecnologia de ponta e a harmonia do Vale do Eden.
+              <footer className="py-24 px-6 md:px-12 border-t border-black/5 bg-beige">
+                <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-16 text-center md:text-left">
+                  <div className="md:col-span-2 flex flex-col items-center md:items-start">
+                    <h2 className="font-serif text-5xl text-brown mb-6 italic tracking-tight">Vale do Eden.</h2>
+                    <p className="text-brown/70 max-w-sm text-sm leading-relaxed">
+                      Uma fusão entre a tecnologia de ponta e a harmonia da natureza.
                       Sua jornada de luxo e reconexão começa aqui.
                     </p>
                   </div>
                   <div>
-                    <h3 className="text-gold uppercase tracking-widest text-[10px] font-bold mb-6">Explorar</h3>
-                    <ul className="space-y-4 text-sm text-mist/60">
-                      <li className="hover:text-gold cursor-pointer transition-colors">Acomodações</li>
-                      <li className="hover:text-gold cursor-pointer transition-colors">Gastronomia</li>
+                    <h3 className="text-gold uppercase tracking-widest text-xs font-semibold mb-8">Explorar</h3>
+                    <ul className="space-y-4 text-sm text-brown/70">
+                      <li className="hover:text-gold cursor-pointer transition-colors duration-300">Acomodações</li>
+                      <li className="hover:text-gold cursor-pointer transition-colors duration-300">Gastronomia</li>
                       <li
-                        className="hover:text-gold cursor-pointer transition-colors"
+                        className="hover:text-gold cursor-pointer transition-colors duration-300"
                         onClick={() => setPage('wedding')}
                       >
                         Casamentos
                       </li>
-                      <li className="hover:text-gold cursor-pointer transition-colors">Reservas</li>
+                      <li className="hover:text-gold cursor-pointer transition-colors duration-300">Reservas</li>
                     </ul>
                   </div>
                   <div>
-                    <h3 className="text-gold uppercase tracking-widest text-[10px] font-bold mb-6">Contato</h3>
-                    <ul className="space-y-4 text-sm text-mist/60">
-                      <li className="hover:text-gold cursor-pointer transition-colors">Instagram</li>
-                      <li className="hover:text-gold cursor-pointer transition-colors">WhatsApp</li>
-                      <li className="hover:text-gold cursor-pointer transition-colors">Privacidade</li>
+                    <h3 className="text-gold uppercase tracking-widest text-xs font-semibold mb-8">Contato</h3>
+                    <ul className="space-y-4 text-sm text-brown/70">
+                      <li className="hover:text-gold cursor-pointer transition-colors duration-300">Instagram</li>
+                      <li className="hover:text-gold cursor-pointer transition-colors duration-300">WhatsApp</li>
+                      <li className="hover:text-gold cursor-pointer transition-colors duration-300">Privacidade</li>
                     </ul>
                   </div>
                 </div>
-                <div className="mt-20 pt-8 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-4 text-[10px] uppercase tracking-widest text-mist/20">
-                  <span>© 2026 Casarão Vale do Eden Reserva. All rights Reserved.</span>
+                <div className="max-w-7xl mx-auto mt-24 pt-8 border-t border-black/5 flex flex-col md:flex-row justify-between items-center gap-4 text-xs uppercase tracking-widest text-brown/40">
+                  <span>© 2026 Casarão Vale do Eden. All rights Reserved.</span>
                   <span>Made with Visionary Excellence</span>
                 </div>
               </footer>

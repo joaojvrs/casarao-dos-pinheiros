@@ -3,7 +3,7 @@ import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { useGSAP } from '@gsap/react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, ChevronLeft, ChevronRight, Users, Moon, Bed, MapPin } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Users, Moon, Bed, MapPin, Star, Sparkles } from 'lucide-react';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -25,6 +25,7 @@ interface Cabin {
   nights: number;
   amenities: string[];
   view: string;
+  highlight?: string;
 }
 
 const CABINS: Cabin[] = [
@@ -63,6 +64,7 @@ const CABINS: Cabin[] = [
       'Roupões e amenidades',
     ],
     view: 'Vista direta para a cachoeira — o som das águas é constante companhia. Deck com ofurô voltado para a natureza intocada.',
+    highlight: 'Vista exclusiva para cachoeira',
   },
   {
     id: '02',
@@ -97,6 +99,7 @@ const CABINS: Cabin[] = [
       'Trilhas exclusivas',
     ],
     view: 'Vista para as piscinas naturais e mata nativa. Deck com ofurô integrado à paisagem verde e tranquila da reserva.',
+    highlight: 'Piscinas naturais privativas',
   },
   {
     id: '03',
@@ -133,6 +136,7 @@ const CABINS: Cabin[] = [
       'Caiaque disponível',
     ],
     view: 'Vista panorâmica para o lago da propriedade. O deck com ofurô está posicionado diretamente sobre a beira d\'água — perfeito para o pôr do sol.',
+    highlight: 'Deck sobre o lago ao pôr do sol',
   },
   {
     id: '04',
@@ -167,6 +171,7 @@ const CABINS: Cabin[] = [
       'Área de lazer',
     ],
     view: 'Integrado ao Casarão histórico com acesso às áreas comuns da propriedade. Vista para os jardins e piscina.',
+    highlight: 'Arquitetura histórica preservada',
   },
   {
     id: '05',
@@ -203,6 +208,7 @@ const CABINS: Cabin[] = [
       'Área de lazer',
     ],
     view: 'Localizado no coração do Casarão histórico com acesso às áreas comuns. Vista para jardins, piscina e paisagem da propriedade.',
+    highlight: 'Espaço exclusivo para toda a família',
   },
 ];
 
@@ -234,32 +240,30 @@ const AccommodationModal: React.FC<{ cabin: Cabin; onClose: () => void }> = ({ c
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      transition={{ duration: 0.25 }}
+      transition={{ duration: 0.22 }}
       className="fixed inset-0 z-[9999] flex items-center justify-center p-4 md:p-6 lg:p-8"
-      style={{ backdropFilter: 'blur(10px)', background: 'rgba(10, 6, 4, 0.88)' }}
+      style={{ background: 'rgba(8, 5, 3, 0.92)' }}
       onClick={e => e.target === e.currentTarget && onClose()}
     >
       <motion.div
-        initial={{ scale: 0.96, opacity: 0, y: 24 }}
+        initial={{ scale: 0.97, opacity: 0, y: 20 }}
         animate={{ scale: 1, opacity: 1, y: 0 }}
-        exit={{ scale: 0.97, opacity: 0, y: 12 }}
-        transition={{ type: 'spring', damping: 28, stiffness: 280 }}
-        className="relative w-full max-w-6xl bg-beige rounded-2xl overflow-hidden flex flex-col lg:flex-row shadow-2xl"
-        style={{ maxHeight: '92vh' }}
+        exit={{ scale: 0.98, opacity: 0, y: 8 }}
+        transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+        className="relative w-full max-w-6xl rounded-2xl overflow-hidden flex flex-col lg:flex-row shadow-2xl"
+        style={{ maxHeight: '92vh', background: '#faf7f2' }}
       >
-        {/* Close */}
         <button
           onClick={onClose}
           aria-label="Fechar"
-          className="absolute top-4 right-4 z-50 w-9 h-9 flex items-center justify-center rounded-full border border-white/20 hover:bg-white/10 transition-colors"
-          style={{ background: 'rgba(0,0,0,0.35)', backdropFilter: 'blur(6px)' }}
+          className="absolute top-4 right-4 z-50 w-8 h-8 flex items-center justify-center rounded-full border border-white/20 hover:bg-white/10 transition-colors"
+          style={{ background: 'rgba(0,0,0,0.4)' }}
         >
-          <X size={15} className="text-white" />
+          <X size={14} className="text-white" />
         </button>
 
-        {/* ── Gallery col ── */}
+        {/* Gallery */}
         <div className="lg:w-[58%] flex flex-col bg-black min-h-0">
-          {/* Main image */}
           <div className="relative flex-1 overflow-hidden" style={{ minHeight: '42vw', maxHeight: '60vh' }}>
             <AnimatePresence mode="wait">
               <motion.img
@@ -267,87 +271,58 @@ const AccommodationModal: React.FC<{ cabin: Cabin; onClose: () => void }> = ({ c
                 src={allImages[activeIdx].src}
                 alt={`${cabin.title} — ${allImages[activeIdx].label}`}
                 loading="eager"
-                initial={{ opacity: 0, scale: 1.04 }}
+                initial={{ opacity: 0, scale: 1.03 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0 }}
-                transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}
+                transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
                 className="w-full h-full object-cover"
               />
             </AnimatePresence>
-
-            {/* Gradient overlay bottom */}
-            <div className="absolute inset-x-0 bottom-0 h-24 pointer-events-none"
-              style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.55), transparent)' }} />
-
-            {/* Label + counter */}
+            <div className="absolute inset-x-0 bottom-0 h-20 pointer-events-none"
+              style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.5), transparent)' }} />
             <div className="absolute bottom-4 left-4 flex items-center gap-3">
-              <span
-                className="px-3 py-1 rounded-full text-[10px] uppercase tracking-widest text-white/80 border border-white/10"
-                style={{ background: 'rgba(0,0,0,0.40)', backdropFilter: 'blur(6px)' }}
-              >
+              <span className="px-3 py-1 rounded-full text-[10px] uppercase tracking-widest text-white/80 border border-white/10"
+                style={{ background: 'rgba(0,0,0,0.38)' }}>
                 {allImages[activeIdx].label}
               </span>
-              <span className="text-white/40 text-[11px] font-mono">
-                {activeIdx + 1} / {allImages.length}
-              </span>
+              <span className="text-white/40 text-[11px] font-mono">{activeIdx + 1} / {allImages.length}</span>
             </div>
-
-            {/* Arrows */}
             {allImages.length > 1 && (
               <>
-                <button
-                  onClick={prev}
-                  aria-label="Imagem anterior"
+                <button onClick={prev} aria-label="Imagem anterior"
                   className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center rounded-full border border-white/15 hover:bg-white/10 transition-colors"
-                  style={{ background: 'rgba(0,0,0,0.32)', backdropFilter: 'blur(4px)' }}
-                >
+                  style={{ background: 'rgba(0,0,0,0.32)' }}>
                   <ChevronLeft size={16} className="text-white" />
                 </button>
-                <button
-                  onClick={next}
-                  aria-label="Próxima imagem"
+                <button onClick={next} aria-label="Próxima imagem"
                   className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center rounded-full border border-white/15 hover:bg-white/10 transition-colors"
-                  style={{ background: 'rgba(0,0,0,0.32)', backdropFilter: 'blur(4px)' }}
-                >
+                  style={{ background: 'rgba(0,0,0,0.32)' }}>
                   <ChevronRight size={16} className="text-white" />
                 </button>
               </>
             )}
           </div>
-
-          {/* Thumbnails */}
-          <div
-            className="flex gap-2 p-3 overflow-x-auto flex-shrink-0"
-            data-lenis-prevent
-            style={{ background: 'rgba(0,0,0,0.75)', scrollbarWidth: 'none' }}
-          >
+          <div className="flex gap-2 p-3 overflow-x-auto flex-shrink-0"
+            data-lenis-prevent style={{ background: 'rgba(0,0,0,0.75)', scrollbarWidth: 'none' }}>
             {allImages.map((img, i) => (
-              <button
-                key={i}
-                onClick={() => setActiveIdx(i)}
+              <button key={i} onClick={() => setActiveIdx(i)}
                 className="flex-shrink-0 rounded-lg overflow-hidden transition-all duration-200"
                 style={{
-                  width: 56,
-                  height: 40,
+                  width: 56, height: 40,
                   opacity: activeIdx === i ? 1 : 0.38,
                   outline: activeIdx === i ? '2px solid rgba(255,255,255,0.55)' : 'none',
                   outlineOffset: 2,
-                  transform: activeIdx === i ? 'scale(1.07)' : 'scale(1)',
-                }}
-              >
+                  transform: activeIdx === i ? 'scale(1.06)' : 'scale(1)',
+                }}>
                 <img src={img.src} alt={img.label} loading="lazy" className="w-full h-full object-cover" />
               </button>
             ))}
           </div>
         </div>
 
-        {/* ── Info col ── */}
-        <div
-          className="lg:w-[42%] flex flex-col overflow-y-auto px-6 py-7 lg:px-8"
-          data-lenis-prevent
-          style={{ maxHeight: '92vh' }}
-        >
-          {/* Header */}
+        {/* Info */}
+        <div className="lg:w-[42%] flex flex-col overflow-y-auto px-6 py-7 lg:px-8"
+          data-lenis-prevent style={{ maxHeight: '92vh' }}>
           <div className="mb-5">
             <span className="font-mono text-[10px] uppercase tracking-[0.4em] text-brown/30 mb-2 block">
               Acomodação #{cabin.id}
@@ -357,31 +332,22 @@ const AccommodationModal: React.FC<{ cabin: Cabin; onClose: () => void }> = ({ c
             </h2>
             <div className="flex flex-wrap gap-1.5">
               {cabin.tags.map(tag => (
-                <span
-                  key={tag}
-                  className="px-2.5 py-1 glass rounded-full text-[9px] uppercase tracking-widest text-brown/65 border border-brown/10"
-                >
+                <span key={tag} className="px-2.5 py-1 rounded-full text-[9px] uppercase tracking-widest text-brown/65 border border-brown/10"
+                  style={{ background: 'rgba(195,163,122,0.08)' }}>
                   {tag}
                 </span>
               ))}
             </div>
           </div>
 
-          {/* Stats */}
           <div className="grid grid-cols-3 gap-0 mb-6 rounded-xl border border-brown/8 overflow-hidden">
             {[
               { Icon: Users, label: 'Capacidade', value: cabin.capacity },
               { Icon: Bed, label: 'Quartos', value: `${cabin.rooms} ${cabin.rooms === 1 ? 'quarto' : 'quartos'}` },
               { Icon: Moon, label: 'Mín. Noites', value: `${cabin.nights} noites` },
             ].map(({ Icon, label, value }, idx) => (
-              <div
-                key={label}
-                className="flex flex-col items-center justify-center py-4 px-2 text-center"
-                style={{
-                  background: 'rgba(26,15,10,0.025)',
-                  borderRight: idx < 2 ? '1px solid rgba(26,15,10,0.06)' : 'none',
-                }}
-              >
+              <div key={label} className="flex flex-col items-center justify-center py-4 px-2 text-center"
+                style={{ background: 'rgba(26,15,10,0.025)', borderRight: idx < 2 ? '1px solid rgba(26,15,10,0.06)' : 'none' }}>
                 <Icon size={13} className="mb-1.5 text-brown/25" />
                 <span className="text-[9px] uppercase tracking-widest text-brown/30 mb-1">{label}</span>
                 <span className="text-brown font-semibold text-[13px]">{value}</span>
@@ -389,58 +355,41 @@ const AccommodationModal: React.FC<{ cabin: Cabin; onClose: () => void }> = ({ c
             ))}
           </div>
 
-          {/* Description */}
           <div className="mb-6">
-            <h3 className="text-[9px] uppercase tracking-[0.35em] text-brown/30 font-bold mb-3">
-              Sobre a Acomodação
-            </h3>
+            <h3 className="text-[9px] uppercase tracking-[0.35em] text-brown/30 font-bold mb-3">Sobre a Acomodação</h3>
             <p className="text-brown/60 leading-relaxed text-sm">{cabin.fullDescription}</p>
           </div>
 
-          {/* View */}
-          <div
-            className="mb-6 p-4 rounded-xl flex gap-3"
-            style={{ background: 'rgba(26,15,10,0.03)', border: '1px solid rgba(26,15,10,0.06)' }}
-          >
+          <div className="mb-6 p-4 rounded-xl flex gap-3"
+            style={{ background: 'rgba(26,15,10,0.03)', border: '1px solid rgba(26,15,10,0.06)' }}>
             <MapPin size={13} className="flex-shrink-0 mt-0.5" style={{ color: '#c3a37a' }} />
             <div>
-              <div className="text-[9px] uppercase tracking-[0.35em] text-brown/30 font-bold mb-1.5">
-                Vista & Localização
-              </div>
+              <div className="text-[9px] uppercase tracking-[0.35em] text-brown/30 font-bold mb-1.5">Vista & Localização</div>
               <p className="text-brown/55 text-xs leading-relaxed">{cabin.view}</p>
             </div>
           </div>
 
-          {/* Amenities */}
           <div className="mb-8">
-            <h3 className="text-[9px] uppercase tracking-[0.35em] text-brown/30 font-bold mb-4">
-              Comodidades
-            </h3>
+            <h3 className="text-[9px] uppercase tracking-[0.35em] text-brown/30 font-bold mb-4">Comodidades</h3>
             <div className="grid grid-cols-2 gap-y-2.5 gap-x-4">
               {cabin.amenities.map(a => (
                 <div key={a} className="flex items-center gap-2 text-xs text-brown/55">
-                  <span
-                    className="w-1 h-1 rounded-full flex-shrink-0"
-                    style={{ background: '#c3a37a' }}
-                  />
+                  <span className="w-1 h-1 rounded-full flex-shrink-0" style={{ background: '#c3a37a' }} />
                   {a}
                 </div>
               ))}
             </div>
           </div>
 
-          {/* CTA */}
-          <div className="mt-auto pt-5 border-t border-brown/8 flex gap-3 sticky bottom-0 bg-beige pb-1">
-            <button
-              onClick={onClose}
-              className="flex-1 py-3.5 glass hover:glass-gold border border-brown/10 transition-all text-[10px] uppercase tracking-[0.25em] text-brown rounded-lg"
-            >
+          <div className="mt-auto pt-5 border-t border-brown/8 flex gap-3 sticky bottom-0 pb-1" style={{ background: '#faf7f2' }}>
+            <button onClick={onClose}
+              className="flex-1 py-3.5 border border-brown/10 hover:border-brown/25 transition-all text-[10px] uppercase tracking-[0.25em] text-brown rounded-lg"
+              style={{ background: 'rgba(26,15,10,0.03)' }}>
               Voltar
             </button>
-            <button
-              data-hover="reservar"
-              className="flex-1 py-3.5 bg-brown text-white transition-colors text-[10px] uppercase tracking-[0.25em] font-bold hover:bg-brown/85 rounded-lg"
-            >
+            <button data-hover="reservar"
+              className="flex-1 py-3.5 text-white transition-colors text-[10px] uppercase tracking-[0.25em] font-bold rounded-lg"
+              style={{ background: '#1a0f0a' }}>
               Reservar Agora
             </button>
           </div>
@@ -454,12 +403,12 @@ export const Accommodations: React.FC = () => {
   const component = useRef<HTMLDivElement>(null!);
   const slider = useRef<HTMLDivElement>(null!);
   const [selectedCabin, setSelectedCabin] = useState<Cabin | null>(null);
+  const [activeCard, setActiveCard] = useState<string | null>(null);
 
   const totalPanels = CABINS.length + 1;
 
   useGSAP(() => {
     const panels = gsap.utils.toArray<HTMLElement>('.panel');
-
     gsap.to(panels, {
       xPercent: -100 * (panels.length - 1),
       ease: 'none',
@@ -471,152 +420,230 @@ export const Accommodations: React.FC = () => {
         end: () => '+=' + slider.current.offsetWidth,
       },
     });
-
     gsap.from('.accomm-title', {
-      y: 50,
+      y: 40,
       opacity: 0,
       duration: 1,
-      scrollTrigger: {
-        trigger: slider.current,
-        start: 'top 80%',
-      },
+      scrollTrigger: { trigger: slider.current, start: 'top 80%' },
     });
   }, { scope: component });
 
   return (
     <>
-      <section ref={component} className="bg-beige overflow-hidden">
+      <section ref={component} style={{ background: '#0d0a08' }} className="overflow-hidden">
         <div
           ref={slider}
           className="relative flex h-screen items-center"
           style={{ width: `${totalPanels * 100}vw` }}
         >
-          {/* ── Intro slide ── */}
-          <div className="panel w-screen h-screen flex items-center justify-center px-6 md:px-20">
-            <div className="max-w-4xl">
-              <span className="text-forest uppercase tracking-[0.4em] text-[10px] font-bold mb-6 block">
-                Origem
-              </span>
-              <h2 className="accomm-title font-serif text-5xl md:text-7xl lg:text-8xl italic mb-8 text-brown">
-                onde se volta ao <br /> princípio de tudo.
+          {/* Intro slide */}
+          <div className="panel w-screen h-screen flex items-center justify-center px-6 md:px-20 relative overflow-hidden">
+            {/* subtle texture overlay */}
+            <div className="absolute inset-0 pointer-events-none"
+              style={{ background: 'radial-gradient(ellipse 80% 60% at 50% 50%, rgba(195,163,122,0.06) 0%, transparent 70%)' }} />
+            <div className="max-w-4xl relative z-10">
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.8 }}
+                className="flex items-center gap-3 mb-8"
+              >
+                <div className="h-px flex-1 max-w-[40px]" style={{ background: 'rgba(195,163,122,0.4)' }} />
+                <span className="uppercase tracking-[0.45em] text-[10px] font-medium" style={{ color: '#c3a37a' }}>
+                  Acomodações
+                </span>
+              </motion.div>
+              <h2 className="accomm-title font-serif text-5xl md:text-7xl lg:text-[86px] italic mb-8 leading-[1.05]" style={{ color: '#f5ede0' }}>
+                onde se volta ao <br />
+                <span style={{ color: '#c3a37a' }}>princípio de tudo.</span>
               </h2>
-              <p className="text-brown/40 max-w-lg text-lg leading-relaxed">
-                Cada espaço foi desenhado como um portal individual, unindo engenharia sustentável com o
-                conforto impecável do luxo contemporâneo.
+              <p className="max-w-md text-lg leading-relaxed mb-12" style={{ color: 'rgba(245,237,224,0.45)' }}>
+                Cada espaço foi desenhado como um portal individual — unindo arquitetura sustentável ao luxo contemporâneo.
               </p>
+              <div className="flex items-center gap-6">
+                <div className="text-center">
+                  <div className="font-serif text-4xl italic mb-1" style={{ color: '#c3a37a' }}>5</div>
+                  <div className="text-[9px] uppercase tracking-widest" style={{ color: 'rgba(245,237,224,0.35)' }}>Acomodações</div>
+                </div>
+                <div className="w-px h-10" style={{ background: 'rgba(195,163,122,0.2)' }} />
+                <div className="text-center">
+                  <div className="font-serif text-4xl italic mb-1" style={{ color: '#c3a37a' }}>90m²</div>
+                  <div className="text-[9px] uppercase tracking-widest" style={{ color: 'rgba(245,237,224,0.35)' }}>Cada Cabana</div>
+                </div>
+                <div className="w-px h-10" style={{ background: 'rgba(195,163,122,0.2)' }} />
+                <div className="text-center">
+                  <div className="font-serif text-4xl italic mb-1" style={{ color: '#c3a37a' }}>∞</div>
+                  <div className="text-[9px] uppercase tracking-widest" style={{ color: 'rgba(245,237,224,0.35)' }}>Memórias</div>
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* ── Cabin slides ── */}
-          {CABINS.map(cabin => (
+          {/* Cabin slides */}
+          {CABINS.map((cabin, index) => (
             <div
               key={cabin.id}
-              className="panel w-screen h-screen flex items-center justify-center px-6 md:px-16 xl:px-20 relative"
+              className="panel w-screen h-screen flex items-center justify-center relative overflow-hidden"
             >
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 xl:gap-16 items-center w-full max-w-7xl">
+              {/* Full-bleed image background (darkened) */}
+              <div className="absolute inset-0 z-0">
+                <img
+                  src={cabin.mainImage}
+                  alt=""
+                  aria-hidden="true"
+                  loading={index === 0 ? 'eager' : 'lazy'}
+                  className="w-full h-full object-cover"
+                  style={{ filter: 'brightness(0.22) saturate(0.8)' }}
+                />
+                <div className="absolute inset-0"
+                  style={{ background: 'linear-gradient(135deg, rgba(8,5,3,0.85) 0%, rgba(8,5,3,0.4) 50%, rgba(8,5,3,0.75) 100%)' }} />
+              </div>
 
-                {/* Image */}
-                <div className="relative group overflow-hidden rounded-2xl aspect-[4/3] lg:aspect-auto lg:h-[68vh]">
+              {/* Content */}
+              <div className="relative z-10 w-full max-w-7xl mx-auto px-6 md:px-16 xl:px-20 grid grid-cols-1 lg:grid-cols-2 gap-8 xl:gap-16 items-center">
+
+                {/* Left — premium image card */}
+                <div
+                  className="relative group overflow-hidden rounded-2xl cursor-pointer"
+                  style={{ aspectRatio: '4/3', maxHeight: '62vh' }}
+                  onMouseEnter={() => setActiveCard(cabin.id)}
+                  onMouseLeave={() => setActiveCard(null)}
+                  onClick={() => setSelectedCabin(cabin)}
+                >
                   <img
                     src={cabin.mainImage}
                     alt={cabin.title}
-                    loading="eager"
-                    className="w-full h-full object-cover transition-transform duration-[1200ms] ease-out group-hover:scale-105"
+                    loading={index === 0 ? 'eager' : 'lazy'}
+                    className="w-full h-full object-cover transition-transform duration-[1400ms] ease-out group-hover:scale-105"
                   />
-                  {/* Subtle gradient */}
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
-                  {/* Number badge */}
-                  <div className="absolute bottom-6 left-6">
-                    <span className="font-mono text-white/30 text-5xl font-bold leading-none">
+
+                  {/* Dark gradient */}
+                  <div className="absolute inset-0"
+                    style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.65) 0%, transparent 55%)' }} />
+
+                  {/* Top-left badge */}
+                  <div className="absolute top-5 left-5">
+                    <span className="font-mono text-[10px] uppercase tracking-[0.3em] px-3 py-1.5 rounded-full border"
+                      style={{ color: '#c3a37a', borderColor: 'rgba(195,163,122,0.35)', background: 'rgba(0,0,0,0.45)' }}>
                       #{cabin.id}
                     </span>
                   </div>
-                  {/* Gallery count hint */}
-                  <div
-                    className="absolute top-5 right-5 px-3 py-1.5 rounded-full text-[9px] uppercase tracking-widest text-white/70 border border-white/10"
-                    style={{ background: 'rgba(0,0,0,0.32)', backdropFilter: 'blur(6px)' }}
-                  >
+
+                  {/* Photo count */}
+                  <div className="absolute top-5 right-5 px-3 py-1.5 rounded-full text-[9px] uppercase tracking-widest border"
+                    style={{ color: 'rgba(255,255,255,0.65)', borderColor: 'rgba(255,255,255,0.12)', background: 'rgba(0,0,0,0.35)' }}>
                     {cabin.gallery.length + 1} fotos
+                  </div>
+
+                  {/* Bottom info on hover */}
+                  <div className="absolute inset-x-0 bottom-0 p-5 translate-y-2 group-hover:translate-y-0 transition-transform duration-500">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Star size={10} fill="#c3a37a" style={{ color: '#c3a37a' }} />
+                      <Star size={10} fill="#c3a37a" style={{ color: '#c3a37a' }} />
+                      <Star size={10} fill="#c3a37a" style={{ color: '#c3a37a' }} />
+                      <Star size={10} fill="#c3a37a" style={{ color: '#c3a37a' }} />
+                      <Star size={10} fill="#c3a37a" style={{ color: '#c3a37a' }} />
+                    </div>
+                    <p className="text-white/90 text-xs font-medium">Ver galeria completa →</p>
                   </div>
                 </div>
 
-                {/* Info */}
-                <div className="space-y-6 lg:space-y-7">
+                {/* Right — info */}
+                <div className="space-y-5 lg:space-y-6">
                   {/* Tags */}
                   <div className="flex flex-wrap gap-2">
                     {cabin.tags.map(tag => (
-                      <span
-                        key={tag}
-                        className="px-3 py-1 glass rounded-full text-[9px] uppercase tracking-widest text-brown/70 border border-brown/10"
-                      >
+                      <span key={tag}
+                        className="px-3 py-1 rounded-full text-[9px] uppercase tracking-widest border"
+                        style={{ color: 'rgba(195,163,122,0.85)', borderColor: 'rgba(195,163,122,0.22)', background: 'rgba(195,163,122,0.06)' }}>
                         {tag}
                       </span>
                     ))}
                   </div>
 
                   {/* Title */}
-                  <h3 className="font-serif text-4xl md:text-5xl xl:text-6xl text-brown leading-tight">
-                    {cabin.title}
-                  </h3>
+                  <div>
+                    <h3 className="font-serif text-4xl md:text-5xl xl:text-6xl leading-tight mb-2" style={{ color: '#f5ede0' }}>
+                      {cabin.title}
+                    </h3>
+                    {cabin.highlight && (
+                      <div className="flex items-center gap-2">
+                        <Sparkles size={11} style={{ color: '#c3a37a' }} />
+                        <span className="text-[11px] italic" style={{ color: 'rgba(195,163,122,0.8)' }}>
+                          {cabin.highlight}
+                        </span>
+                      </div>
+                    )}
+                  </div>
 
                   {/* Stats row */}
-                  <div className="flex gap-8 text-[10px] uppercase tracking-[0.2em] text-brown/35 font-bold border-y border-brown/8 py-4">
+                  <div className="flex gap-6 py-4 border-y text-[10px] uppercase tracking-[0.2em] font-medium"
+                    style={{ borderColor: 'rgba(195,163,122,0.12)', color: 'rgba(195,163,122,0.45)' }}>
                     <div>
-                      Capacidade&ensp;
-                      <span className="text-brown">{cabin.capacity}</span>
+                      Capacidade&ensp;<span style={{ color: '#f5ede0' }}>{cabin.capacity}</span>
                     </div>
                     <div>
-                      Quartos&ensp;
-                      <span className="text-brown">{cabin.rooms}</span>
+                      Quartos&ensp;<span style={{ color: '#f5ede0' }}>{cabin.rooms}</span>
                     </div>
                     <div>
-                      Mín.&ensp;
-                      <span className="text-brown">{cabin.nights} noites</span>
+                      Mín.&ensp;<span style={{ color: '#f5ede0' }}>{cabin.nights} noites</span>
                     </div>
                   </div>
 
                   {/* Short description */}
-                  <p className="text-brown/55 text-base leading-relaxed max-w-md">
+                  <p className="text-base leading-relaxed max-w-md" style={{ color: 'rgba(245,237,224,0.55)' }}>
                     {cabin.shortDescription}
                   </p>
 
-                  {/* Top amenities preview */}
-                  <div className="flex flex-wrap gap-2">
-                    {cabin.amenities.slice(0, 4).map(a => (
-                      <span key={a} className="flex items-center gap-1.5 text-[10px] text-brown/45">
-                        <span
-                          className="w-1 h-1 rounded-full flex-shrink-0"
-                          style={{ background: '#c3a37a' }}
-                        />
+                  {/* Amenities preview */}
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                    {cabin.amenities.slice(0, 6).map(a => (
+                      <div key={a} className="flex items-center gap-2 text-[11px]" style={{ color: 'rgba(245,237,224,0.45)' }}>
+                        <span className="w-1 h-1 rounded-full flex-shrink-0" style={{ background: '#c3a37a' }} />
                         {a}
-                      </span>
+                      </div>
                     ))}
                   </div>
 
-                  {/* Buttons */}
+                  {/* CTAs */}
                   <div className="flex gap-3 pt-1">
                     <button
                       data-hover="reservar"
-                      className="flex-1 px-6 py-4 bg-brown text-white transition-colors text-[10px] uppercase tracking-[0.3em] font-bold hover:bg-brown/85"
+                      className="flex-1 py-4 text-[10px] uppercase tracking-[0.3em] font-bold rounded-xl transition-all duration-300 hover:opacity-90 hover:shadow-lg"
+                      style={{ background: '#c3a37a', color: '#0d0a08' }}
                     >
                       Reservar Agora
                     </button>
                     <button
                       data-hover="detalhes"
                       onClick={() => setSelectedCabin(cabin)}
-                      className="flex-1 px-6 py-4 glass hover:glass-gold transition-all text-[10px] uppercase tracking-[0.3em] text-brown border border-brown/10"
+                      className="flex-1 py-4 text-[10px] uppercase tracking-[0.3em] font-medium rounded-xl border transition-all duration-300 hover:border-opacity-60"
+                      style={{ color: '#f5ede0', borderColor: 'rgba(245,237,224,0.18)', background: 'rgba(245,237,224,0.04)' }}
                     >
-                      Ver Detalhes Completos
+                      Ver Detalhes
                     </button>
                   </div>
                 </div>
+              </div>
+
+              {/* Slide indicator */}
+              <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-2">
+                {CABINS.map((c, i) => (
+                  <div key={c.id}
+                    className="rounded-full transition-all duration-300"
+                    style={{
+                      width: c.id === cabin.id ? 20 : 6,
+                      height: 4,
+                      background: c.id === cabin.id ? '#c3a37a' : 'rgba(195,163,122,0.25)',
+                    }}
+                  />
+                ))}
               </div>
             </div>
           ))}
         </div>
       </section>
 
-      {/* ── Modal ── */}
       <AnimatePresence>
         {selectedCabin && (
           <AccommodationModal

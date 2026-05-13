@@ -7,8 +7,8 @@ import { motion } from 'motion/react';
 function ParticleField() {
   const ref = useRef<THREE.Points>(null!);
   const [sphere] = React.useState(() => {
-    const positions = new Float32Array(3000 * 3);
-    for (let i = 0; i < 3000; i++) {
+    const positions = new Float32Array(1200 * 3);
+    for (let i = 0; i < 1200; i++) {
       const r = 2 + Math.random() * 3;
       const theta = Math.random() * 2 * Math.PI;
       const phi = Math.acos(2 * Math.random() - 1);
@@ -107,38 +107,48 @@ export const Hero: React.FC<HeroProps> = ({ onWeddingClick }) => {
           initial={{ opacity: 0, scale: 0.8 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 1, delay: 1.5 }}
-          className="flex flex-col items-center gap-4"
+          className="flex flex-col items-center gap-5"
         >
+          {/* Botão primário — Iniciar Experiência */}
           <button
             data-hover="reservar"
-            className="group relative px-10 py-4 overflow-hidden border border-white/30 rounded-full transition-all hover:border-white"
+            className="group relative px-12 py-4 overflow-hidden rounded-full transition-all duration-300 hover:shadow-[0_0_32px_rgba(255,255,255,0.25)]"
+            style={{
+              background: 'rgba(255,255,255,0.12)',
+              border: '1.5px solid rgba(255,255,255,0.7)',
+              backdropFilter: 'blur(8px)',
+            }}
           >
-            <span className="relative z-10 text-xs uppercase tracking-[0.2em] font-medium group-hover:text-black transition-colors text-white">
+            <span className="relative z-10 text-xs uppercase tracking-[0.25em] font-semibold text-white group-hover:text-black transition-colors duration-300 drop-shadow-sm">
               Iniciar Experiência
             </span>
-            <div className="absolute inset-0 bg-white translate-y-full group-hover:translate-y-0 transition-transform duration-500 ease-out z-0" />
+            <div className="absolute inset-0 bg-white translate-y-full group-hover:translate-y-0 transition-transform duration-500 ease-out z-0 rounded-full" />
           </button>
 
+          {/* Botão secundário — Casamentos */}
           {onWeddingClick && (
             <motion.button
               onClick={onWeddingClick}
               data-hover="casamento"
-              className="group relative px-10 py-4 overflow-hidden border rounded-full transition-all"
-              style={{ borderColor: 'rgba(195,163,122,0.45)' }}
-              whileHover={{ borderColor: 'rgba(195,163,122,0.9)' }}
+              className="group relative px-12 py-4 overflow-hidden rounded-full transition-all duration-300 hover:shadow-[0_0_32px_rgba(195,163,122,0.35)]"
+              style={{
+                background: 'rgba(195,163,122,0.12)',
+                border: '1.5px solid rgba(195,163,122,0.85)',
+                backdropFilter: 'blur(8px)',
+              }}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 1, delay: 1.8 }}
             >
               <span
-                className="relative z-10 text-xs uppercase tracking-[0.2em] font-medium transition-colors duration-400"
-                style={{ color: 'rgba(195,163,122,0.85)' }}
+                className="relative z-10 text-xs uppercase tracking-[0.25em] font-semibold transition-colors duration-300 group-hover:text-black drop-shadow-sm"
+                style={{ color: '#e8d4b8' }}
               >
                 ✦ Casamentos na Chapel
               </span>
               <motion.div
-                className="absolute inset-0 origin-bottom"
-                style={{ background: 'rgba(195,163,122,0.92)' }}
+                className="absolute inset-0 origin-bottom rounded-full"
+                style={{ background: 'rgba(195,163,122,0.95)' }}
                 initial={{ scaleY: 0 }}
                 whileHover={{ scaleY: 1 }}
                 transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
