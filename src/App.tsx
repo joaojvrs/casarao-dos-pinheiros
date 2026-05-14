@@ -21,9 +21,10 @@ import { FinalSection } from './components/sections/FinalSection';
 import { WeddingTeaser } from './components/sections/WeddingTeaser';
 
 const WeddingModule = lazy(() => import('./pages/WeddingModule').then(module => ({ default: module.WeddingModule })));
+const GuestPortal = lazy(() => import('./pages/GuestPortal').then(module => ({ default: module.GuestPortal })));
 
 export default function App() {
-  const [page, setPage] = useState<'home' | 'wedding'>('home');
+  const [page, setPage] = useState<'home' | 'wedding' | 'guest'>('home');
   const [splashDone, setSplashDone] = useState(false);
 
   return (
@@ -46,6 +47,18 @@ export default function App() {
                 <WeddingModule onBack={() => setPage('home')} />
               </Suspense>
             </motion.div>
+          ) : page === 'guest' ? (
+            <motion.div
+              key="guest"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.45 }}
+            >
+              <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-beige"><div className="w-8 h-8 border-4 border-gold border-t-transparent rounded-full animate-spin"></div></div>}>
+                <GuestPortal onBack={() => setPage('home')} />
+              </Suspense>
+            </motion.div>
           ) : (
             <motion.div
               key="home"
@@ -54,7 +67,7 @@ export default function App() {
               exit={{ opacity: 0 }}
               transition={{ duration: 0.45 }}
             >
-              <Navbar onWeddingClick={() => setPage('wedding')} />
+              <Navbar onWeddingClick={() => setPage('wedding')} onGuestClick={() => setPage('guest')} />
 
               <main>
                 <Hero onWeddingClick={() => setPage('wedding')} />

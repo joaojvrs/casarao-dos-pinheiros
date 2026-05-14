@@ -4,9 +4,10 @@ import { Menu, User } from 'lucide-react';
 
 interface NavbarProps {
   onWeddingClick?: () => void;
+  onGuestClick?: () => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ onWeddingClick }) => {
+export const Navbar: React.FC<NavbarProps> = ({ onWeddingClick, onGuestClick }) => {
   const [scrolled, setScrolled] = useState(false);
   const { scrollY } = useScroll();
 
@@ -107,6 +108,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onWeddingClick }) => {
           )}
 
           <motion.button
+            onClick={onGuestClick}
             data-hover="perfil"
             className="flex items-center justify-center w-9 h-9 rounded-full border transition-all duration-300"
             animate={{

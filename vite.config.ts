@@ -28,11 +28,34 @@ export default defineConfig(({ mode }) => {
         output: {
           manualChunks(id) {
             if (!id.includes('node_modules')) return;
-            if (id.includes('three') || id.includes('@react-three')) return 'vendor-three';
-            if (id.includes('gsap')) return 'vendor-gsap';
-            if (id.includes('motion') || id.includes('framer-motion')) return 'vendor-motion';
-            if (id.includes('react-dom') || id.includes('react/')) return 'vendor-react';
-            return 'vendor';
+
+            const normalizedId = id.replace(/\\/g, '/');
+
+            if (
+              normalizedId.includes('/node_modules/react/') ||
+              normalizedId.includes('/node_modules/react-dom/') ||
+              normalizedId.includes('/node_modules/scheduler/')
+            ) {
+              return 'vendor-react';
+            }
+
+            if (
+              normalizedId.includes('/node_modules/three/') ||
+              normalizedId.includes('/node_modules/@react-three/')
+            ) {
+              return 'vendor-three';
+            }
+
+            if (normalizedId.includes('/node_modules/gsap/')) return 'vendor-gsap';
+
+            if (
+              normalizedId.includes('/node_modules/motion/') ||
+              normalizedId.includes('/node_modules/framer-motion/') ||
+              normalizedId.includes('/node_modules/motion-dom/') ||
+              normalizedId.includes('/node_modules/motion-utils/')
+            ) {
+              return 'vendor-motion';
+            }
           },
         },
       },

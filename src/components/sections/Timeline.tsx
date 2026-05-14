@@ -97,11 +97,13 @@ const StepCard: React.FC<{ step: Step; index: number }> = ({ step, index }) => {
           fontSize: 'clamp(86px, 12vw, 144px)',
           lineHeight: 1,
           color: step.accent,
+          WebkitTextStroke: '1px rgba(26,15,10,0.18)',
+          textShadow: '0 10px 34px rgba(26,15,10,0.14)',
           top: '50%',
           transform: 'translateY(-50%)',
           ...(isRight ? { left: '4%' } : { right: '4%' }),
         }}
-        animate={{ opacity: active ? 0.13 : 0 }}
+        animate={{ opacity: active ? 0.42 : 0.18 }}
         transition={{ duration: 1 }}
       >
         {step.time}
@@ -173,16 +175,16 @@ const StepCard: React.FC<{ step: Step; index: number }> = ({ step, index }) => {
           <motion.div
             className="relative rounded-2xl overflow-hidden p-8"
             style={{
-              background: 'rgba(10,20,18,0.91)',
+              background: 'rgba(10,20,18,0.96)',
               backdropFilter: 'blur(28px)',
               borderWidth: 1,
               borderStyle: 'solid',
             }}
             animate={{
-              borderColor: active ? `${step.accent}45` : 'rgba(255,255,255,0.08)',
+              borderColor: active ? `${step.accent}70` : 'rgba(255,255,255,0.14)',
               boxShadow: active
-                ? `0 12px 52px ${step.glow}, 0 0 0 1px ${step.accent}0d`
-                : '0 0 0 rgba(0,0,0,0)',
+                ? `0 16px 56px rgba(0,0,0,0.28), 0 12px 52px ${step.glow}, 0 0 0 1px ${step.accent}18`
+                : '0 12px 36px rgba(0,0,0,0.16)',
             }}
             transition={{ duration: 0.9 }}
           >
@@ -197,14 +199,20 @@ const StepCard: React.FC<{ step: Step; index: number }> = ({ step, index }) => {
 
             <div className="relative z-10">
               <motion.span
-                className="font-mono text-[11px] mb-3 block tracking-widest"
-                style={{ color: step.accent }}
-                animate={{ opacity: active ? 1 : 0.65 }}
+                className="inline-flex items-center rounded-full border px-3 py-1 font-mono text-[11px] mb-4 tracking-widest"
+                style={{
+                  color: '#fcf9f2',
+                  background: `${step.accent}2e`,
+                  borderColor: `${step.accent}75`,
+                  boxShadow: `0 0 22px ${step.glow}`,
+                  textShadow: '0 1px 10px rgba(0,0,0,0.65)',
+                }}
+                animate={{ opacity: active ? 1 : 0.9 }}
                 transition={{ duration: 0.6 }}
               >
                 {step.time}
               </motion.span>
-              <h3 className="font-serif text-[22px] leading-tight mb-3" style={{ color: 'rgba(252,249,242,0.88)' }}>
+              <h3 className="font-serif text-[22px] leading-tight mb-3" style={{ color: 'rgba(252,249,242,0.96)' }}>
                 {step.title}
               </h3>
               <motion.div
@@ -215,7 +223,7 @@ const StepCard: React.FC<{ step: Step; index: number }> = ({ step, index }) => {
                 viewport={{ once: true }}
                 style={{ background: `${step.accent}50` }}
               />
-              <p className="text-[13px] leading-relaxed max-w-[280px]" style={{ color: 'rgba(232,226,217,0.4)' }}>
+              <p className="text-[13px] leading-relaxed max-w-[280px]" style={{ color: 'rgba(232,226,217,0.72)' }}>
                 {step.desc}
               </p>
             </div>
@@ -235,14 +243,14 @@ const StepCard: React.FC<{ step: Step; index: number }> = ({ step, index }) => {
         <motion.div
           className="relative rounded-xl overflow-hidden p-5"
           style={{
-            background: 'rgba(255,255,255,0.022)',
-            backdropFilter: 'blur(24px)',
+            background: 'linear-gradient(145deg, rgba(7,13,12,0.99) 0%, rgba(15,25,22,0.98) 100%)',
+            backdropFilter: 'blur(18px)',
             borderWidth: 1,
             borderStyle: 'solid',
           }}
           animate={{
-            borderColor: active ? `${step.accent}28` : 'rgba(255,255,255,0.05)',
-            boxShadow: active ? `0 6px 32px ${step.glow}` : '0 0 0 rgba(0,0,0,0)',
+            borderColor: active ? `${step.accent}82` : 'rgba(195,163,122,0.38)',
+            boxShadow: active ? `0 14px 36px rgba(0,0,0,0.34), 0 6px 32px ${step.glow}` : '0 12px 30px rgba(0,0,0,0.28)',
           }}
           transition={{ duration: 0.8 }}
         >
@@ -252,14 +260,23 @@ const StepCard: React.FC<{ step: Step; index: number }> = ({ step, index }) => {
             style={{ background: `radial-gradient(ellipse at 50% 30%, ${step.glow} 0%, transparent 70%)` }}
           />
           <div className="relative z-10">
-            <span className="font-mono text-[11px] mb-2 block tracking-widest" style={{ color: `${step.accent}99` }}>
+            <span
+              className="inline-flex items-center rounded-full border px-3 py-1 font-mono text-[11px] mb-3 tracking-widest"
+              style={{
+                color: '#fcf9f2',
+                background: `${step.accent}45`,
+                borderColor: `${step.accent}a8`,
+                boxShadow: `0 0 18px ${step.glow}`,
+                textShadow: '0 1px 10px rgba(0,0,0,0.65)',
+              }}
+            >
               {step.time}
             </span>
-            <h3 className="font-serif text-[19px] mb-2 leading-tight" style={{ color: 'rgba(252,249,242,0.88)' }}>
+            <h3 className="font-serif text-[19px] mb-2 leading-tight" style={{ color: '#fffaf0' }}>
               {step.title}
             </h3>
             <div className="h-px mb-3" style={{ width: 30, background: `${step.accent}48` }} />
-            <p className="text-xs leading-relaxed" style={{ color: 'rgba(232,226,217,0.4)' }}>
+            <p className="text-xs leading-relaxed" style={{ color: 'rgba(252,249,242,0.84)' }}>
               {step.desc}
             </p>
           </div>

@@ -6,7 +6,7 @@ interface WeddingTeaserProps {
   onWeddingClick: () => void;
 }
 
-const CHAPEL_IMAGE = '/casamento/fotocapenaprincipal.jpeg';
+const CHAPEL_IMAGE = '/casamento/foto%20capela%20retangular.png';
 
 const PILLARS = [
   { Icon: Church, label: 'Capela de Pedras', sub: 'Cerimonia intima na natureza' },
