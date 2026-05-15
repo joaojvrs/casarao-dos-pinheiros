@@ -1,8 +1,3 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import { useState, lazy, Suspense } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { SmoothScroll } from './components/layout/SmoothScroll';
@@ -19,13 +14,38 @@ import { Timeline } from './components/sections/Timeline';
 import { Concierge } from './components/sections/Concierge';
 import { FinalSection } from './components/sections/FinalSection';
 import { WeddingTeaser } from './components/sections/WeddingTeaser';
+import type { GuestOrder, HKRequest } from './types/portal';
 
-const WeddingModule = lazy(() => import('./pages/WeddingModule').then(module => ({ default: module.WeddingModule })));
-const GuestPortal = lazy(() => import('./pages/GuestPortal').then(module => ({ default: module.GuestPortal })));
+const WeddingModule = lazy(() => import('./pages/WeddingModule').then(m => ({ default: m.WeddingModule })));
+const GuestPortal = lazy(() => import('./pages/GuestPortal').then(m => ({ default: m.GuestPortal })));
+const AttendantPortal = lazy(() => import('./pages/AttendantPortal').then(m => ({ default: m.AttendantPortal })));
+
+const Spinner = () => (
+  <div className="min-h-screen flex items-center justify-center bg-beige">
+    <div className="w-8 h-8 border-4 border-gold border-t-transparent rounded-full animate-spin" />
+  </div>
+);
 
 export default function App() {
-  const [page, setPage] = useState<'home' | 'wedding' | 'guest'>('home');
+  const [page, setPage] = useState<'home' | 'wedding' | 'guest' | 'attendant'>('home');
   const [splashDone, setSplashDone] = useState(false);
+
+  const [orders, setOrders] = useState<GuestOrder[]>([]);
+  const [hkRequests, setHKRequests] = useState<HKRequest[]>([]);
+  const [frigobarConsumed, setFrigobarConsumed] = useState<Record<string, number>>({});
+
+  const addOrder = (order: GuestOrder) => setOrders(prev => [order, ...prev]);
+
+  const updateOrderStatus = (id: string, status: GuestOrder['status']) =>
+    setOrders(prev => prev.map(o => o.id === id ? { ...o, status } : o));
+
+  const updatePaymentStatus = (id: string, paymentStatus: GuestOrder['paymentStatus']) =>
+    setOrders(prev => prev.map(o => o.id === id ? { ...o, paymentStatus } : o));
+
+  const addHKRequest = (req: HKRequest) => setHKRequests(prev => [req, ...prev]);
+
+  const updateHKStatus = (id: string, status: HKRequest['status']) =>
+    setHKRequests(prev => prev.map(r => r.id === id ? { ...r, status } : r));
 
   return (
     <SmoothScroll>
@@ -36,39 +56,43 @@ export default function App() {
 
         <AnimatePresence mode="wait">
           {page === 'wedding' ? (
-            <motion.div
-              key="wedding"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.45 }}
-            >
-              <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-beige"><div className="w-8 h-8 border-4 border-gold border-t-transparent rounded-full animate-spin"></div></div>}>
+            <motion.div key="wedding" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.45 }}>
+              <Suspense fallback={<Spinner />}>
                 <WeddingModule onBack={() => setPage('home')} />
               </Suspense>
             </motion.div>
+
           ) : page === 'guest' ? (
-            <motion.div
-              key="guest"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.45 }}
-            >
-              <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-beige"><div className="w-8 h-8 border-4 border-gold border-t-transparent rounded-full animate-spin"></div></div>}>
-                <GuestPortal onBack={() => setPage('home')} />
+            <motion.div key="guest" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.45 }}>
+              <Suspense fallback={<Spinner />}>
+                <GuestPortal
+                  onBack={() => setPage('home')}
+                  onPlaceOrder={addOrder}
+                  onHKRequest={addHKRequest}
+                  frigobarConsumed={frigobarConsumed}
+                  onFrigobarChange={setFrigobarConsumed}
+                />
               </Suspense>
             </motion.div>
-          ) : (
-            <motion.div
-              key="home"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.45 }}
-            >
-              <Navbar onWeddingClick={() => setPage('wedding')} onGuestClick={() => setPage('guest')} />
 
+          ) : page === 'attendant' ? (
+            <motion.div key="attendant" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.45 }}>
+              <Suspense fallback={<Spinner />}>
+                <AttendantPortal
+                  onBack={() => setPage('home')}
+                  orders={orders}
+                  onUpdateOrderStatus={updateOrderStatus}
+                  onUpdatePaymentStatus={updatePaymentStatus}
+                  hkRequests={hkRequests}
+                  onUpdateHKStatus={updateHKStatus}
+                  frigobarConsumed={frigobarConsumed}
+                />
+              </Suspense>
+            </motion.div>
+
+          ) : (
+            <motion.div key="home" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.45 }}>
+              <Navbar onWeddingClick={() => setPage('wedding')} onGuestClick={() => setPage('guest')} />
               <main>
                 <Hero onWeddingClick={() => setPage('wedding')} />
                 <Accommodations />
@@ -95,12 +119,7 @@ export default function App() {
                     <ul className="space-y-4 text-sm text-brown/70">
                       <li className="hover:text-gold cursor-pointer transition-colors duration-300">Acomodações</li>
                       <li className="hover:text-gold cursor-pointer transition-colors duration-300">Gastronomia</li>
-                      <li
-                        className="hover:text-gold cursor-pointer transition-colors duration-300"
-                        onClick={() => setPage('wedding')}
-                      >
-                        Casamentos
-                      </li>
+                      <li className="hover:text-gold cursor-pointer transition-colors duration-300" onClick={() => setPage('wedding')}>Casamentos</li>
                       <li className="hover:text-gold cursor-pointer transition-colors duration-300">Reservas</li>
                     </ul>
                   </div>
@@ -115,7 +134,9 @@ export default function App() {
                 </div>
                 <div className="max-w-7xl mx-auto mt-24 pt-8 border-t border-black/5 flex flex-col md:flex-row justify-between items-center gap-4 text-xs uppercase tracking-widest text-brown/40">
                   <span>© 2026 Casarão Vale do Eden. All rights Reserved.</span>
-                  <span>Made with Visionary Excellence</span>
+                  <button onClick={() => setPage('attendant')} className="text-brown/20 hover:text-brown/50 transition-colors duration-300">
+                    Área da Equipe
+                  </button>
                 </div>
               </footer>
             </motion.div>

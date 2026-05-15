@@ -22,7 +22,7 @@ interface WeddingModuleProps {
 }
 
 const GOLD = '#c3a37a';
-const HERO_IMAGE = '/casamento/fotocapenaprincipal.jpeg';
+const HERO_IMAGE = '/casamento/fotocasamento.png';
 const CHAPEL_IMAGE = '/casamento/fotocapela.jpeg';
 const BRIDE_IMAGE = '/casamento/imagem_noiva.jpeg';
 const HONEYMOON_IMAGE = '/1761873810367-CabanaMata_Quarto2.jpg';
@@ -174,14 +174,10 @@ const WeddingNavbar: React.FC<{ onBack: () => void }> = memo(({ onBack }) => {
   return (
     <nav className="fixed top-0 left-0 w-full z-[500] pointer-events-none">
       <div
-        className={`absolute inset-0 pointer-events-none transition-colors duration-300 ${
-          scrolled ? 'bg-brown/92 shadow-lg' : 'bg-transparent'
-        }`}
+        className="absolute inset-0 pointer-events-none bg-brown/95 shadow-lg"
       />
       <div
-        className={`absolute bottom-0 inset-x-0 h-px transition-opacity duration-300 ${
-          scrolled ? 'opacity-100' : 'opacity-0'
-        }`}
+        className="absolute bottom-0 inset-x-0 h-px opacity-100"
         style={{
           background:
             'linear-gradient(to right, transparent 0%, rgba(195,163,122,0.35) 30%, rgba(195,163,122,0.35) 70%, transparent 100%)',
@@ -198,14 +194,17 @@ const WeddingNavbar: React.FC<{ onBack: () => void }> = memo(({ onBack }) => {
           </span>
         </button>
 
-        <div className="absolute left-1/2 -translate-x-1/2">
+        <div className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center gap-1">
           <img
             src="/logo.png"
             alt="Casarao Vale do Eden"
-            className="h-12 w-auto object-contain opacity-90"
+            className="h-9 w-auto object-contain opacity-90"
             loading="eager"
             decoding="async"
           />
+          <span className="text-white/50 uppercase tracking-[0.4em] text-[8px]">
+            Casamentos · Vale do Eden Reserva
+          </span>
         </div>
 
         <button className="hidden sm:block px-5 py-[7px] rounded-full text-[10px] uppercase tracking-widest font-medium border border-white/20 text-white/80 hover:border-gold/60 hover:text-gold transition-colors duration-300">
@@ -220,32 +219,33 @@ const WeddingHero: React.FC = memo(() => {
   const transition = useSoftTransition();
 
   return (
-    <section className="relative min-h-screen w-full overflow-hidden flex items-end justify-center bg-brown">
+    <section className="relative mt-[64px] h-[calc(100vh-64px)] w-full overflow-hidden bg-brown">
+      <img
+        src={HERO_IMAGE}
+        alt=""
+        aria-hidden="true"
+        className="absolute inset-0 w-full h-full object-cover object-center blur-sm opacity-40 scale-110"
+        loading="eager"
+        decoding="async"
+      />
       <img
         src={HERO_IMAGE}
         alt="Capela de Pedras para casamentos no Vale do Eden"
-        className="absolute inset-0 h-full w-full object-contain object-center"
+        className="absolute inset-0 w-full h-full object-cover object-center scale-110"
         loading="eager"
         decoding="async"
         fetchPriority="high"
       />
-      <div className="absolute inset-0 bg-gradient-to-b from-black/62 via-black/22 to-beige pointer-events-none" />
-      <div className="absolute inset-0 bg-gradient-to-r from-black/30 via-transparent to-black/24 pointer-events-none" />
+      <div className="absolute inset-0 bg-black/45 pointer-events-none" />
+      <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/50 pointer-events-none" />
 
       <motion.div
         initial="hidden"
         animate="show"
         transition={{ staggerChildren: 0.08 }}
-        className="relative z-10 text-center px-6 pb-28 md:pb-36 w-full max-w-5xl mx-auto"
+        className="absolute inset-0 z-10 flex items-end justify-center"
       >
-        <motion.div variants={fadeUp} transition={transition} className="mb-8 flex items-center justify-center gap-4">
-          <div className="h-px w-12 bg-white/30" />
-          <span className="text-white/62 uppercase tracking-[0.5em] text-[10px]">
-            Casamentos · Vale do Eden Reserva
-          </span>
-          <div className="h-px w-12 bg-white/30" />
-        </motion.div>
-
+      <div className="text-center px-6 pb-28 md:pb-36 w-full max-w-5xl mx-auto">
         <motion.h1
           variants={fadeUp}
           transition={transition}
@@ -283,9 +283,10 @@ const WeddingHero: React.FC = memo(() => {
             Conhecer mais
           </button>
         </motion.div>
+      </div>
       </motion.div>
 
-      <div className="absolute bottom-0 left-0 w-full h-40 bg-gradient-to-t from-beige to-transparent z-10 pointer-events-none" />
+      <div className="absolute bottom-0 left-0 w-full h-16 bg-gradient-to-t from-beige to-transparent z-10 pointer-events-none" />
     </section>
   );
 });
