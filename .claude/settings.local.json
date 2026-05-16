@@ -14,7 +14,9 @@
       "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\Usuario\\\\casarao-dos-pinheiros\" -Recurse -Include \"*.tsx\", \"*.ts\", \"*.json\")",
       "Bash(Select-Object FullName)",
       "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\Usuario\\\\casarao-dos-pinheiros\" -MaxDepth 1 -Include \"*.md\", \"*.yml\", \"*.yaml\", \".env*\")",
-      "Bash(Select-Object Name)"
+      "Bash(Select-Object Name)",
+      "PowerShell(Get-ChildItem \"c:\\\\Users\\\\Pc\\\\Documents\\\\Casarao dos Pinheiros\\\\casarao-dos-pinheiros\" -Force | ForEach-Object { $_.Name })",
+      "PowerShell(Get-ChildItem \"c:\\\\Users\\\\Pc\\\\Documents\\\\Casarao dos Pinheiros\\\\casarao-dos-pinheiros\\\\src\" -Recurse | Where-Object { !$_.PSIsContainer } | ForEach-Object { $_.FullName.Replace\\(\"c:\\\\Users\\\\Pc\\\\Documents\\\\Casarao dos Pinheiros\\\\casarao-dos-pinheiros\\\\\", \"\"\\) })"
     ]
   }
 }

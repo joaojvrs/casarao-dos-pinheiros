@@ -51,6 +51,7 @@ const MENU = [
   { name: 'Tabua Vale do Eden', copy: 'Queijos, castanhas, geleias e paes rusticos.', price: 186, eta: 18, image: IMG.deck, icon: Wine, category: 'vinhos' },
   { name: 'Pinot da serra', copy: 'Vinho leve para noite fria e lareira acesa.', price: 230, eta: 12, image: IMG.wineFire, icon: GlassWater, category: 'vinhos' },
   { name: 'Jantar MasterChef privativo', copy: 'Menu autoral servido no chale com mise en place discreta.', price: 420, eta: 55, image: IMG.room, icon: UtensilsCrossed, category: 'jantar' },
+  { name: 'Moqueca de Pintado', copy: 'Peixe do pantanal cozido no leite de coco com pimentoes e azeite de dende. Servida na panela de barro.', price: 118, eta: 40, image: IMG.leisure, icon: UtensilsCrossed, category: 'jantar' },
   { name: 'Fondue de chocolate', copy: 'Frutas frescas, chocolate quente e final lento.', price: 132, eta: 22, image: IMG.pool, icon: Sparkles, category: 'sobremesas' },
   { name: 'Kit banho botanico', copy: 'Sais, vela aromatica e toalhas aquecidas.', price: 96, eta: 14, image: IMG.bath, icon: Bath, category: 'amenities' },
 ];
