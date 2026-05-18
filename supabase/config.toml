@@ -1,0 +1,28 @@
+project_id = "albifgtynofnayrkdmzz"
+
+[functions.register-user]
+verify_jwt = false
+
+[functions.create-booking]
+verify_jwt = false
+
+[functions.invite-staff]
+verify_jwt = true
+
+[functions.operations-summary]
+verify_jwt = true
+
+[functions.restaurant-operations]
+verify_jwt = true
+
+[functions.hr-operations]
+verify_jwt = true
+
+[functions.housekeeping-operations]
+verify_jwt = true
+
+[functions.financial-operations]
+verify_jwt = true
+
+[functions.frontdesk-operations]
+verify_jwt = true

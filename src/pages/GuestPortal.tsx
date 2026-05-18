@@ -4,11 +4,12 @@ import QRCode from 'react-qr-code';
 import {
   ArrowLeft, Bath, BedDouble, CalendarDays, Check, ChevronRight, Clock,
   CloudSun, Coffee, ConciergeBell, Copy, CreditCard, Flame, GlassWater,
-  Heart, Home, KeyRound, Lamp, Leaf, MessageCircle, Minus, Mountain,
+  Heart, Home, Lamp, Leaf, MessageCircle, Minus, Mountain,
   Music2, Package, Plus, QrCode, Refrigerator, Send, ShowerHead,
   Sparkles, ThermometerSun, UtensilsCrossed, Waves, Wifi, Wine, X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 import type { GuestOrder, HKRequest, PaymentMethod } from '../types/portal';
 
 interface GuestPortalProps {
@@ -28,7 +29,6 @@ const BG = '#f3eee5';
 const DARK = '#1a0f0a';
 const GREEN = '#3a6b4a';
 
-const CREDENTIALS = { user: 'Jairo Alves', password: 'jairo123' };
 const PIX_KEY = 'casarao@valeeden.com.br';
 const PIX_MERCHANT = 'CASARÃO VALE DO EDEN';
 
@@ -128,10 +128,7 @@ const TABS: { id: Tab; label: string; Icon: LucideIcon }[] = [
 export const GuestPortal: React.FC<GuestPortalProps> = ({
   onBack, onPlaceOrder, onHKRequest, frigobarConsumed, onFrigobarChange,
 }) => {
-  const [user, setUser] = useState('');
-  const [password, setPassword] = useState('');
-  const [logged, setLogged] = useState(false);
-  const [loginError, setLoginError] = useState('');
+  const auth = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>('home');
   const [cart, setCart] = useState<Cart>({});
   const [paymentModal, setPaymentModal] = useState<'select' | 'pix' | 'room' | null>(null);
@@ -150,23 +147,16 @@ export const GuestPortal: React.FC<GuestPortalProps> = ({
 
   const cartTotal = MENU.reduce((sum, item) => sum + (cart[item.name] || 0) * item.price, 0);
   const cartCount = Object.values(cart).reduce((s, v) => s + v, 0);
+  const guestName = String(auth.user?.user_metadata?.full_name || auth.user?.email || 'Hóspede');
+  const firstName = guestName.split(' ')[0] || 'Hóspede';
 
   const changeCart = (name: string, delta: number) =>
     setCart(c => ({ ...c, [name]: Math.max(0, (c[name] || 0) + delta) }));
 
-  const login = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (user.trim() === CREDENTIALS.user && password === CREDENTIALS.password) {
-      setLogged(true); setLoginError('');
-    } else {
-      setLoginError('Credenciais incorretas. Use Jairo Alves / jairo123');
-    }
-  };
-
   const confirmPayment = (method: PaymentMethod) => {
     const items = MENU.filter(m => (cart[m.name] || 0) > 0).map(m => ({ name: m.name, qty: cart[m.name], price: m.price }));
     const order: GuestOrder = {
-      id: uid(), room: 'Chalé Pinheiros', guestName: 'Jairo Alves',
+      id: uid(), room: 'Chalé Pinheiros', guestName,
       items, total: cartTotal, payment: method,
       paymentStatus: method === 'pix' ? 'pending' : 'charged',
       status: 'pending', placedAt: new Date().toISOString(),
@@ -195,10 +185,6 @@ export const GuestPortal: React.FC<GuestPortalProps> = ({
     }));
   };
 
-  if (!logged) {
-    return <LoginScreen onBack={onBack} login={login} user={user} setUser={setUser} password={password} setPassword={setPassword} error={loginError} />;
-  }
-
   return (
     <div className="min-h-screen bg-[#f3eee5] text-[#1a0f0a] pb-24">
       {/* Top bar */}
@@ -226,7 +212,7 @@ export const GuestPortal: React.FC<GuestPortalProps> = ({
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.22 }}
           >
-            {activeTab === 'home' && <HomeTab mood={mood} countdown={countdown} />}
+            {activeTab === 'home' && <HomeTab mood={mood} countdown={countdown} guestName={firstName} />}
             {activeTab === 'roomservice' && (
               <RoomServiceTab
                 cart={cart} changeCart={changeCart} total={cartTotal} count={cartCount}
@@ -287,44 +273,13 @@ export const GuestPortal: React.FC<GuestPortalProps> = ({
   );
 };
 
-// ─── Login ───────────────────────────────────────────────────────────────────
-
-function LoginScreen({ onBack, login, user, setUser, password, setPassword, error }: {
-  onBack: () => void; login: (e: React.FormEvent) => void;
-  user: string; setUser: (v: string) => void;
-  password: string; setPassword: (v: string) => void;
-  error: string;
-}) {
-  return (
-    <section className="relative min-h-screen overflow-hidden bg-[#07110f]">
-      <img src={IMG.hero} alt="" className="absolute inset-0 h-full w-full object-cover opacity-60" />
-      <div className="absolute inset-0 bg-gradient-to-br from-black/82 via-[#07110f]/72 to-black/38" />
-      <button onClick={onBack} className="absolute left-5 top-5 z-10 flex h-11 w-11 items-center justify-center rounded-full border border-white/20 bg-black/20 text-white backdrop-blur-md">
-        <ArrowLeft size={18} />
-      </button>
-      <div className="relative z-10 flex min-h-screen items-center justify-center px-5 py-16">
-        <motion.form onSubmit={login} initial={{ opacity: 0, y: 28, filter: 'blur(10px)' }} animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }} transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1] }} className="w-full max-w-[430px] rounded-[10px] border border-white/16 bg-black/38 p-6 shadow-[0_28px_90px_rgba(0,0,0,0.48)] backdrop-blur-2xl sm:p-8">
-          <img src="/logo.png" alt="Casarao Vale do Eden" className="mx-auto mb-8 h-20 w-auto object-contain" />
-          <span className="mb-4 block text-center text-[10px] font-bold uppercase tracking-[0.42em] text-[#c3a37a]">Concierge particular</span>
-          <h1 className="mb-3 text-center font-serif text-4xl italic leading-tight text-white">Bem-vindo ao seu refugio.</h1>
-          <p className="mx-auto mb-8 max-w-xs text-center text-sm leading-relaxed text-white/62">Entre para cuidar da estadia, pedir momentos e descobrir o que a reserva preparou para hoje.</p>
-          <label className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-white/55">Hóspede</label>
-          <input value={user} onChange={e => setUser(e.target.value)} className="mb-5 h-12 w-full rounded-[8px] border border-white/14 bg-white/10 px-4 text-sm text-white outline-none placeholder:text-white/30 focus:border-[#c3a37a]" placeholder="Jairo Alves" />
-          <label className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-white/55">Senha de acesso</label>
-          <input value={password} onChange={e => setPassword(e.target.value)} type="password" className="mb-5 h-12 w-full rounded-[8px] border border-white/14 bg-white/10 px-4 text-sm text-white outline-none placeholder:text-white/30 focus:border-[#c3a37a]" placeholder="jairo123" />
-          {error && <p className="mb-5 rounded-[8px] bg-red-950/35 p-3 text-sm text-red-100">{error}</p>}
-          <button type="submit" className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[#c3a37a] text-xs font-bold uppercase tracking-[0.28em] text-[#1a0f0a] transition hover:bg-white">
-            <KeyRound size={15} /> Entrar no refugio
-          </button>
-        </motion.form>
-      </div>
-    </section>
-  );
-}
-
 // ─── Home Tab ────────────────────────────────────────────────────────────────
 
-function HomeTab({ mood, countdown }: { mood: { period: string; weather: string; note: string }; countdown: { days: number; hours: number; minutes: number } }) {
+function HomeTab({ mood, countdown, guestName }: {
+  mood: { period: string; weather: string; note: string };
+  countdown: { days: number; hours: number; minutes: number };
+  guestName: string;
+}) {
   return (
     <div className="space-y-5">
       {/* Hero card */}
@@ -333,7 +288,7 @@ function HomeTab({ mood, countdown }: { mood: { period: string; weather: string;
         <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-[#101917]" />
         <div className="relative p-5">
           <span className="text-[9px] font-bold uppercase tracking-[0.4em] text-[#c3a37a]">Vale do Eden Reserva</span>
-          <h1 className="mt-2 font-serif text-3xl italic leading-tight">Bem-vindo, Jairo.</h1>
+          <h1 className="mt-2 font-serif text-3xl italic leading-tight">Bem-vindo, {guestName}.</h1>
           <p className="mt-2 max-w-xs text-sm text-white/66">{mood.note}</p>
           <div className="mt-4 flex gap-3">
             <Pill icon={<CloudSun size={13} />} label={mood.weather} />

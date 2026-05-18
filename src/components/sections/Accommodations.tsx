@@ -212,7 +212,7 @@ const CABINS: Cabin[] = [
   },
 ];
 
-const AccommodationModal: React.FC<{ cabin: Cabin; onClose: () => void }> = ({ cabin, onClose }) => {
+const AccommodationModal: React.FC<{ cabin: Cabin; onClose: () => void; onBookingClick?: () => void }> = ({ cabin, onClose, onBookingClick }) => {
   const [activeIdx, setActiveIdx] = useState(0);
   const allImages: CabinImage[] = [{ src: cabin.mainImage, label: 'Principal' }, ...cabin.gallery];
 
@@ -387,7 +387,7 @@ const AccommodationModal: React.FC<{ cabin: Cabin; onClose: () => void }> = ({ c
               style={{ background: 'rgba(26,15,10,0.03)' }}>
               Voltar
             </button>
-            <button data-hover="reservar"
+            <button onClick={onBookingClick} data-hover="reservar"
               className="flex-1 py-3.5 text-white transition-colors text-[10px] uppercase tracking-[0.25em] font-bold rounded-lg"
               style={{ background: '#1a0f0a' }}>
               Reservar Agora
@@ -399,7 +399,7 @@ const AccommodationModal: React.FC<{ cabin: Cabin; onClose: () => void }> = ({ c
   );
 };
 
-export const Accommodations: React.FC = () => {
+export const Accommodations: React.FC<{ onBookingClick?: () => void }> = ({ onBookingClick }) => {
   const component = useRef<HTMLDivElement>(null!);
   const slider = useRef<HTMLDivElement>(null!);
   const [selectedCabin, setSelectedCabin] = useState<Cabin | null>(null);
@@ -608,6 +608,7 @@ export const Accommodations: React.FC = () => {
                   {/* CTAs */}
                   <div className="flex gap-3 pt-1">
                     <button
+                      onClick={onBookingClick}
                       data-hover="reservar"
                       className="flex-1 py-4 text-[10px] uppercase tracking-[0.3em] font-bold rounded-xl transition-all duration-300 hover:opacity-90 hover:shadow-lg"
                       style={{ background: '#c3a37a', color: '#0d0a08' }}
@@ -649,6 +650,7 @@ export const Accommodations: React.FC = () => {
           <AccommodationModal
             cabin={selectedCabin}
             onClose={() => setSelectedCabin(null)}
+            onBookingClick={onBookingClick}
           />
         )}
       </AnimatePresence>

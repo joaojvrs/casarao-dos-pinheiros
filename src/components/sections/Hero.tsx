@@ -42,9 +42,10 @@ function ParticleField() {
 
 interface HeroProps {
   onWeddingClick?: () => void;
+  onBookingClick?: () => void;
 }
 
-export const Hero: React.FC<HeroProps> = ({ onWeddingClick }) => {
+export const Hero: React.FC<HeroProps> = ({ onWeddingClick, onBookingClick }) => {
   return (
     <section className="relative h-screen w-full overflow-hidden flex items-center justify-center bg-beige">
       {/* Background Video */}
@@ -111,6 +112,7 @@ export const Hero: React.FC<HeroProps> = ({ onWeddingClick }) => {
         >
           {/* Botão primário — Iniciar Experiência */}
           <button
+            onClick={onBookingClick}
             data-hover="reservar"
             className="group relative px-12 py-4 overflow-hidden rounded-full transition-all duration-300 hover:shadow-[0_0_32px_rgba(255,255,255,0.25)]"
             style={{
@@ -120,7 +122,7 @@ export const Hero: React.FC<HeroProps> = ({ onWeddingClick }) => {
             }}
           >
             <span className="relative z-10 text-xs uppercase tracking-[0.25em] font-semibold text-white group-hover:text-black transition-colors duration-300 drop-shadow-sm">
-              Iniciar Experiência
+              Gerar Reserva
             </span>
             <div className="absolute inset-0 bg-white translate-y-full group-hover:translate-y-0 transition-transform duration-500 ease-out z-0 rounded-full" />
           </button>

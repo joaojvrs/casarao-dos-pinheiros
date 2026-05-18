@@ -106,7 +106,7 @@ const EXPERIENCES: Experience[] = [
 ];
 
 
-export const Experiences: React.FC = () => {
+export const Experiences: React.FC<{ onBookingClick?: () => void }> = ({ onBookingClick }) => {
   const sectionRef = useRef<HTMLDivElement>(null);
 
   return (
@@ -226,6 +226,7 @@ export const Experiences: React.FC = () => {
             Todas as experiências podem ser agendadas com antecedência através do nosso concierge.
           </p>
           <button
+            onClick={onBookingClick}
             data-hover="reservar"
             className="px-8 py-4 bg-brown text-white text-[10px] uppercase tracking-[0.3em] font-bold hover:bg-brown/85 transition-colors flex-shrink-0"
           >

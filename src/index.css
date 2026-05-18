@@ -52,6 +52,20 @@ html.lenis {
   border: 1px solid rgba(212, 175, 55, 0.2);
 }
 
+@layer components {
+  .btn-primary {
+    @apply rounded-full bg-[#20140d] px-4 py-2 text-xs font-bold uppercase tracking-[0.14em] text-white transition hover:bg-[#3a2a1f] disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-light {
+    @apply rounded-full border border-black/10 bg-white px-4 py-2 text-xs font-bold uppercase tracking-[0.14em] text-black/60 transition hover:border-[#c3a37a] hover:text-black disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-danger {
+    @apply rounded-full border border-red-200 bg-red-50 px-4 py-2 text-xs font-bold uppercase tracking-[0.14em] text-red-800 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+}
+
 ::selection {
   background: var(--color-gold);
   color: black;

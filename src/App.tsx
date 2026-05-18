@@ -1,4 +1,6 @@
-import { useState, lazy, Suspense } from 'react';
+import { lazy, Suspense, useState } from 'react';
+import type { ReactElement } from 'react';
+import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { SmoothScroll } from './components/layout/SmoothScroll';
 import { CustomCursor } from './components/ui/CustomCursor';
@@ -14,11 +16,40 @@ import { Timeline } from './components/sections/Timeline';
 import { Concierge } from './components/sections/Concierge';
 import { FinalSection } from './components/sections/FinalSection';
 import { WeddingTeaser } from './components/sections/WeddingTeaser';
+import { useAuth } from './contexts/AuthContext';
+import { getDefaultRouteForAccess } from './lib/access-routing';
+import type { PermissionSet } from './types/auth';
 import type { GuestOrder, HKRequest } from './types/portal';
+import type { AppPage } from './types/navigation';
 
 const WeddingModule = lazy(() => import('./pages/WeddingModule').then(m => ({ default: m.WeddingModule })));
 const GuestPortal = lazy(() => import('./pages/GuestPortal').then(m => ({ default: m.GuestPortal })));
 const AttendantPortal = lazy(() => import('./pages/AttendantPortal').then(m => ({ default: m.AttendantPortal })));
+const BookingPortal = lazy(() => import('./pages/BookingPortal').then(m => ({ default: m.BookingPortal })));
+const AuthPortal = lazy(() => import('./pages/AuthPortal').then(m => ({ default: m.AuthPortal })));
+const AccessPortal = lazy(() => import('./pages/AccessPortal').then(m => ({ default: m.AccessPortal })));
+const OperationsPortal = lazy(() => import('./pages/OperationsPortal').then(m => ({ default: m.OperationsPortal })));
+const FrontDeskPortal = lazy(() => import('./pages/FrontDeskPortal').then(m => ({ default: m.FrontDeskPortal })));
+const KitchenPortal = lazy(() => import('./pages/KitchenPortal').then(m => ({ default: m.KitchenPortal })));
+const HRPortal = lazy(() => import('./pages/HRPortal').then(m => ({ default: m.HRPortal })));
+const HousekeepingPortal = lazy(() => import('./pages/HousekeepingPortal').then(m => ({ default: m.HousekeepingPortal })));
+const FinancialPortal = lazy(() => import('./pages/FinancialPortal').then(m => ({ default: m.FinancialPortal })));
+
+const ROUTES: Record<AppPage, string> = {
+  home: '/',
+  wedding: '/casamentos',
+  guest: '/hospede',
+  attendant: '/equipe/atendimento',
+  frontdesk: '/equipe/recepcao',
+  kitchen: '/equipe/cozinha',
+  housekeeping: '/equipe/governanca',
+  booking: '/reservas',
+  auth: '/login',
+  access: '/equipe/acessos',
+  operations: '/equipe',
+  hr: '/equipe/rh',
+  financial: '/equipe/financeiro',
+};
 
 const Spinner = () => (
   <div className="min-h-screen flex items-center justify-center bg-beige">
@@ -26,24 +57,101 @@ const Spinner = () => (
   </div>
 );
 
-export default function App() {
-  const [page, setPage] = useState<'home' | 'wedding' | 'guest' | 'attendant'>('home');
-  const [splashDone, setSplashDone] = useState(false);
+function Guard({ children, teamOnly = false, guestOnly = false, adminOnly = false, permission, permissionAny }: {
+  children: ReactElement;
+  teamOnly?: boolean;
+  guestOnly?: boolean;
+  adminOnly?: boolean;
+  permission?: keyof PermissionSet;
+  permissionAny?: Array<keyof PermissionSet>;
+}) {
+  const auth = useAuth();
+  const location = useLocation();
 
+  if (auth.loading) return <Spinner />;
+  if (!auth.authenticated) return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  if (teamOnly && (auth.role === 'visitor' || auth.role === 'guest')) return <Navigate to={getDefaultRouteForAccess(auth.role, auth.permissions)} replace state={{ from: location.pathname }} />;
+  if (guestOnly && !['guest', 'master', 'admin', 'manager'].includes(auth.role)) return <Navigate to={getDefaultRouteForAccess(auth.role, auth.permissions)} replace state={{ from: location.pathname }} />;
+  if (adminOnly && auth.role !== 'master' && auth.role !== 'admin') return <Navigate to="/equipe" replace />;
+  if (permission && auth.role !== 'master' && auth.role !== 'admin' && auth.role !== 'manager' && auth.role !== permission && !auth.permissions[permission]) return <Navigate to="/equipe" replace />;
+  if (permissionAny && auth.role !== 'master' && auth.role !== 'admin' && auth.role !== 'manager' && !permissionAny.some(item => auth.role === item || auth.permissions[item])) return <Navigate to="/equipe" replace />;
+
+  return children;
+}
+
+function HomePage({ navigatePage }: { navigatePage: (page: AppPage) => void }) {
+  return (
+    <motion.div key="home" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.45 }}>
+      <Navbar
+        onWeddingClick={() => navigatePage('wedding')}
+        onGuestClick={() => navigatePage('auth')}
+        onBookingClick={() => navigatePage('booking')}
+        onNavigate={navigatePage}
+      />
+      <main>
+        <Hero onWeddingClick={() => navigatePage('wedding')} onBookingClick={() => navigatePage('booking')} />
+        <Accommodations onBookingClick={() => navigatePage('booking')} />
+        <Experiences onBookingClick={() => navigatePage('booking')} />
+        <SensoryMap />
+        <Gallery />
+        <WeddingTeaser onWeddingClick={() => navigatePage('wedding')} />
+        <Timeline />
+        <Concierge />
+        <FinalSection />
+      </main>
+
+      <footer className="py-24 px-6 md:px-12 border-t border-black/5 bg-beige">
+        <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-16 text-center md:text-left">
+          <div className="md:col-span-2 flex flex-col items-center md:items-start">
+            <h2 className="font-serif text-5xl text-brown mb-6 italic tracking-tight">Vale do Eden.</h2>
+            <p className="text-brown/70 max-w-sm text-sm leading-relaxed">
+              Uma fusão entre a tecnologia de ponta e a harmonia da natureza.
+              Sua jornada de luxo e reconexão começa aqui.
+            </p>
+          </div>
+          <div>
+            <h3 className="text-gold uppercase tracking-widest text-xs font-semibold mb-8">Explorar</h3>
+            <ul className="space-y-4 text-sm text-brown/70">
+              <li className="hover:text-gold cursor-pointer transition-colors duration-300">Acomodações</li>
+              <li className="hover:text-gold cursor-pointer transition-colors duration-300">Gastronomia</li>
+              <li className="hover:text-gold cursor-pointer transition-colors duration-300" onClick={() => navigatePage('wedding')}>Casamentos</li>
+              <li className="hover:text-gold cursor-pointer transition-colors duration-300" onClick={() => navigatePage('booking')}>Reservas</li>
+            </ul>
+          </div>
+          <div>
+            <h3 className="text-gold uppercase tracking-widest text-xs font-semibold mb-8">Contato</h3>
+            <ul className="space-y-4 text-sm text-brown/70">
+              <li className="hover:text-gold cursor-pointer transition-colors duration-300">Instagram</li>
+              <li className="hover:text-gold cursor-pointer transition-colors duration-300">WhatsApp</li>
+              <li className="hover:text-gold cursor-pointer transition-colors duration-300">Privacidade</li>
+            </ul>
+          </div>
+        </div>
+        <div className="max-w-7xl mx-auto mt-24 pt-8 border-t border-black/5 flex flex-col md:flex-row justify-between items-center gap-4 text-xs uppercase tracking-widest text-brown/40">
+          <span>© 2026 Casarão Vale do Eden. All rights Reserved.</span>
+        </div>
+      </footer>
+    </motion.div>
+  );
+}
+
+export default function App() {
+  const [splashDone, setSplashDone] = useState(false);
   const [orders, setOrders] = useState<GuestOrder[]>([]);
   const [hkRequests, setHKRequests] = useState<HKRequest[]>([]);
   const [frigobarConsumed, setFrigobarConsumed] = useState<Record<string, number>>({});
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const navigatePage = (page: AppPage) => navigate(ROUTES[page]);
+  const onBackHome = () => navigate('/');
 
   const addOrder = (order: GuestOrder) => setOrders(prev => [order, ...prev]);
-
   const updateOrderStatus = (id: string, status: GuestOrder['status']) =>
     setOrders(prev => prev.map(o => o.id === id ? { ...o, status } : o));
-
   const updatePaymentStatus = (id: string, paymentStatus: GuestOrder['paymentStatus']) =>
     setOrders(prev => prev.map(o => o.id === id ? { ...o, paymentStatus } : o));
-
   const addHKRequest = (req: HKRequest) => setHKRequests(prev => [req, ...prev]);
-
   const updateHKStatus = (id: string, status: HKRequest['status']) =>
     setHKRequests(prev => prev.map(r => r.id === id ? { ...r, status } : r));
 
@@ -54,94 +162,26 @@ export default function App() {
         <PortalLoader />
         <CustomCursor />
 
-        <AnimatePresence mode="wait">
-          {page === 'wedding' ? (
-            <motion.div key="wedding" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.45 }}>
-              <Suspense fallback={<Spinner />}>
-                <WeddingModule onBack={() => setPage('home')} />
-              </Suspense>
-            </motion.div>
-
-          ) : page === 'guest' ? (
-            <motion.div key="guest" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.45 }}>
-              <Suspense fallback={<Spinner />}>
-                <GuestPortal
-                  onBack={() => setPage('home')}
-                  onPlaceOrder={addOrder}
-                  onHKRequest={addHKRequest}
-                  frigobarConsumed={frigobarConsumed}
-                  onFrigobarChange={setFrigobarConsumed}
-                />
-              </Suspense>
-            </motion.div>
-
-          ) : page === 'attendant' ? (
-            <motion.div key="attendant" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.45 }}>
-              <Suspense fallback={<Spinner />}>
-                <AttendantPortal
-                  onBack={() => setPage('home')}
-                  orders={orders}
-                  onUpdateOrderStatus={updateOrderStatus}
-                  onUpdatePaymentStatus={updatePaymentStatus}
-                  hkRequests={hkRequests}
-                  onUpdateHKStatus={updateHKStatus}
-                  frigobarConsumed={frigobarConsumed}
-                />
-              </Suspense>
-            </motion.div>
-
-          ) : (
-            <motion.div key="home" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.45 }}>
-              <Navbar onWeddingClick={() => setPage('wedding')} onGuestClick={() => setPage('guest')} />
-              <main>
-                <Hero onWeddingClick={() => setPage('wedding')} />
-                <Accommodations />
-                <Experiences />
-                <SensoryMap />
-                <Gallery />
-                <WeddingTeaser onWeddingClick={() => setPage('wedding')} />
-                <Timeline />
-                <Concierge />
-                <FinalSection />
-              </main>
-
-              <footer className="py-24 px-6 md:px-12 border-t border-black/5 bg-beige">
-                <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-16 text-center md:text-left">
-                  <div className="md:col-span-2 flex flex-col items-center md:items-start">
-                    <h2 className="font-serif text-5xl text-brown mb-6 italic tracking-tight">Vale do Eden.</h2>
-                    <p className="text-brown/70 max-w-sm text-sm leading-relaxed">
-                      Uma fusão entre a tecnologia de ponta e a harmonia da natureza.
-                      Sua jornada de luxo e reconexão começa aqui.
-                    </p>
-                  </div>
-                  <div>
-                    <h3 className="text-gold uppercase tracking-widest text-xs font-semibold mb-8">Explorar</h3>
-                    <ul className="space-y-4 text-sm text-brown/70">
-                      <li className="hover:text-gold cursor-pointer transition-colors duration-300">Acomodações</li>
-                      <li className="hover:text-gold cursor-pointer transition-colors duration-300">Gastronomia</li>
-                      <li className="hover:text-gold cursor-pointer transition-colors duration-300" onClick={() => setPage('wedding')}>Casamentos</li>
-                      <li className="hover:text-gold cursor-pointer transition-colors duration-300">Reservas</li>
-                    </ul>
-                  </div>
-                  <div>
-                    <h3 className="text-gold uppercase tracking-widest text-xs font-semibold mb-8">Contato</h3>
-                    <ul className="space-y-4 text-sm text-brown/70">
-                      <li className="hover:text-gold cursor-pointer transition-colors duration-300">Instagram</li>
-                      <li className="hover:text-gold cursor-pointer transition-colors duration-300">WhatsApp</li>
-                      <li className="hover:text-gold cursor-pointer transition-colors duration-300">Privacidade</li>
-                    </ul>
-                  </div>
-                </div>
-                <div className="max-w-7xl mx-auto mt-24 pt-8 border-t border-black/5 flex flex-col md:flex-row justify-between items-center gap-4 text-xs uppercase tracking-widest text-brown/40">
-                  <span>© 2026 Casarão Vale do Eden. All rights Reserved.</span>
-                  <button onClick={() => setPage('attendant')} className="text-brown/20 hover:text-brown/50 transition-colors duration-300">
-                    Área da Equipe
-                  </button>
-                </div>
-              </footer>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        <Suspense fallback={<Spinner />}>
+          <AnimatePresence mode="wait">
+            <Routes location={location} key={location.pathname}>
+              <Route path="/" element={<HomePage navigatePage={navigatePage} />} />
+              <Route path="/casamentos" element={<motion.div key="wedding" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.45 }}><WeddingModule onBack={onBackHome} /></motion.div>} />
+              <Route path="/reservas" element={<motion.div key="booking" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.45 }}><BookingPortal onBack={onBackHome} /></motion.div>} />
+              <Route path="/login" element={<motion.div key="auth" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.45 }}><AuthPortal onBack={onBackHome} /></motion.div>} />
+              <Route path="/hospede" element={<Guard guestOnly><motion.div key="guest" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.45 }}><GuestPortal onBack={onBackHome} onPlaceOrder={addOrder} onHKRequest={addHKRequest} frigobarConsumed={frigobarConsumed} onFrigobarChange={setFrigobarConsumed} /></motion.div></Guard>} />
+              <Route path="/equipe" element={<Guard teamOnly><motion.div key="operations" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.45 }}><OperationsPortal onBack={onBackHome} onNavigate={navigatePage} /></motion.div></Guard>} />
+              <Route path="/equipe/acessos" element={<Guard teamOnly adminOnly><motion.div key="access" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.45 }}><AccessPortal onBack={() => navigate('/equipe')} /></motion.div></Guard>} />
+              <Route path="/equipe/atendimento" element={<Guard teamOnly><motion.div key="attendant" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.45 }}><AttendantPortal onBack={() => navigate('/equipe')} orders={orders} onUpdateOrderStatus={updateOrderStatus} onUpdatePaymentStatus={updatePaymentStatus} hkRequests={hkRequests} onUpdateHKStatus={updateHKStatus} frigobarConsumed={frigobarConsumed} /></motion.div></Guard>} />
+              <Route path="/equipe/recepcao" element={<Guard teamOnly permissionAny={['bookings', 'guests']}><motion.div key="frontdesk" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.45 }}><FrontDeskPortal onBack={() => navigate('/equipe')} /></motion.div></Guard>} />
+              <Route path="/equipe/cozinha" element={<Guard teamOnly permission="kitchen"><motion.div key="kitchen" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.45 }}><KitchenPortal onBack={() => navigate('/equipe')} /></motion.div></Guard>} />
+              <Route path="/equipe/governanca" element={<Guard teamOnly permission="housekeeping"><motion.div key="housekeeping" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.45 }}><HousekeepingPortal onBack={() => navigate('/equipe')} /></motion.div></Guard>} />
+              <Route path="/equipe/rh" element={<Guard teamOnly permission="hr"><motion.div key="hr" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.45 }}><HRPortal onBack={() => navigate('/equipe')} /></motion.div></Guard>} />
+              <Route path="/equipe/financeiro" element={<Guard teamOnly permission="payments"><motion.div key="financial" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.45 }}><FinancialPortal onBack={() => navigate('/equipe')} /></motion.div></Guard>} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </AnimatePresence>
+        </Suspense>
       </div>
     </SmoothScroll>
   );

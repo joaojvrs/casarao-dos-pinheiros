@@ -2,11 +2,12 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   AlertCircle, ArrowLeft, Bath, BedDouble, Check, CheckCircle2, ChevronDown,
-  ChevronUp, Clock, Coffee, CreditCard, Flame, GlassWater, KeyRound, Leaf,
-  ListOrdered, Loader2, LogOut, Package, QrCode, Refrigerator, Sparkles,
+  ChevronUp, Clock, Coffee, CreditCard, Flame, GlassWater, Leaf,
+  ListOrdered, Loader2, Package, QrCode, Refrigerator, Sparkles,
   ThumbsUp, UtensilsCrossed, Wine, X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 import type { GuestOrder, HKRequest } from '../types/portal';
 
 type IconComponent = LucideIcon;
@@ -23,9 +24,7 @@ interface AttendantPortalProps {
 
 type ATab = 'orders' | 'frigobar' | 'housekeeping' | 'account';
 
-const ATTENDANT = { user: 'Atendente', password: 'eden2026' };
 const ROOM = 'Chalé Pinheiros';
-const GUEST = 'Jairo Alves';
 
 const FRIGOBAR_ITEMS = [
   { name: 'Agua Mineral 500ml', standardQty: 2, price: 0, icon: GlassWater },
@@ -66,29 +65,15 @@ export const AttendantPortal: React.FC<AttendantPortalProps> = ({
   onBack, orders, onUpdateOrderStatus, onUpdatePaymentStatus,
   hkRequests, onUpdateHKStatus, frigobarConsumed,
 }) => {
-  const [user, setUser] = useState('');
-  const [password, setPassword] = useState('');
-  const [logged, setLogged] = useState(false);
-  const [error, setError] = useState('');
+  const auth = useAuth();
   const [activeTab, setActiveTab] = useState<ATab>('orders');
-
-  const login = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (user.trim() === ATTENDANT.user && password === ATTENDANT.password) {
-      setLogged(true); setError('');
-    } else {
-      setError('Credenciais incorretas. Use Atendente / eden2026');
-    }
-  };
 
   const pendingOrders = orders.filter(o => o.status !== 'delivered').length;
   const pendingHK = hkRequests.filter(r => r.status !== 'done').length;
   const frigoTotal = FRIGOBAR_ITEMS.reduce((sum, item) => sum + (frigobarConsumed[item.name] || 0) * item.price, 0);
   const roomServiceTotal = orders.filter(o => o.paymentStatus === 'charged').reduce((s, o) => s + o.total, 0);
-
-  if (!logged) {
-    return <AttendantLogin onBack={onBack} login={login} user={user} setUser={setUser} password={password} setPassword={setPassword} error={error} />;
-  }
+  const operatorName = String(auth.user?.user_metadata?.full_name || auth.user?.email || 'Equipe');
+  const currentGuestName = orders[0]?.guestName || 'Hóspede';
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
@@ -100,11 +85,9 @@ export const AttendantPortal: React.FC<AttendantPortalProps> = ({
           </button>
           <div className="text-center">
             <p className="text-xs font-bold uppercase tracking-widest text-[#3a6b4a]">Painel da Equipe</p>
-            <p className="text-[10px] text-gray-400 mt-0.5">Vale do Eden · Turno ativo</p>
+            <p className="text-[10px] text-gray-400 mt-0.5">Vale do Eden · {operatorName}</p>
           </div>
-          <button onClick={() => setLogged(false)} className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-gray-100 transition">
-            <LogOut size={16} className="text-gray-400" />
-          </button>
+          <div className="h-9 w-9" />
         </div>
 
         {/* Quick stats */}
@@ -140,51 +123,15 @@ export const AttendantPortal: React.FC<AttendantPortalProps> = ({
             {activeTab === 'orders' && (
               <OrdersTab orders={orders} onUpdateStatus={onUpdateOrderStatus} onUpdatePayment={onUpdatePaymentStatus} />
             )}
-            {activeTab === 'frigobar' && <FrigobarTab consumed={frigobarConsumed} />}
+            {activeTab === 'frigobar' && <FrigobarTab consumed={frigobarConsumed} guestName={currentGuestName} />}
             {activeTab === 'housekeeping' && <HousekeepingTab requests={hkRequests} onUpdateStatus={onUpdateHKStatus} />}
-            {activeTab === 'account' && <AccountTab orders={orders} frigobarConsumed={frigobarConsumed} />}
+            {activeTab === 'account' && <AccountTab orders={orders} frigobarConsumed={frigobarConsumed} guestName={currentGuestName} />}
           </motion.div>
         </AnimatePresence>
       </main>
     </div>
   );
 };
-
-// ─── Login ────────────────────────────────────────────────────────────────────
-
-function AttendantLogin({ onBack, login, user, setUser, password, setPassword, error }: {
-  onBack: () => void; login: (e: React.FormEvent) => void;
-  user: string; setUser: (v: string) => void;
-  password: string; setPassword: (v: string) => void;
-  error: string;
-}) {
-  return (
-    <section className="min-h-screen bg-gray-900 flex items-center justify-center px-5">
-      <button onClick={onBack} className="absolute left-5 top-5 flex h-10 w-10 items-center justify-center rounded-full border border-white/20 text-white hover:bg-white/10 transition">
-        <ArrowLeft size={18} />
-      </button>
-      <motion.form onSubmit={login} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="w-full max-w-sm rounded-2xl border border-white/10 bg-gray-800 p-7 shadow-2xl">
-        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#3a6b4a] mx-auto mb-6">
-          <KeyRound size={24} className="text-white" />
-        </div>
-        <h1 className="text-center text-xl font-bold text-white mb-1">Área da Equipe</h1>
-        <p className="text-center text-sm text-gray-400 mb-7">Vale do Eden · Painel de atendimento</p>
-
-        <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-gray-400">Usuário</label>
-        <input value={user} onChange={e => setUser(e.target.value)} className="mb-4 h-11 w-full rounded-xl border border-white/10 bg-white/8 px-4 text-sm text-white outline-none placeholder:text-white/25 focus:border-[#3a6b4a]" placeholder="Atendente" />
-
-        <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-gray-400">Senha</label>
-        <input value={password} onChange={e => setPassword(e.target.value)} type="password" className="mb-4 h-11 w-full rounded-xl border border-white/10 bg-white/8 px-4 text-sm text-white outline-none placeholder:text-white/25 focus:border-[#3a6b4a]" placeholder="eden2026" />
-
-        {error && <p className="mb-4 rounded-xl bg-red-900/30 border border-red-800/30 p-3 text-sm text-red-300">{error}</p>}
-
-        <button type="submit" className="w-full rounded-xl bg-[#3a6b4a] py-3 text-sm font-bold text-white hover:bg-[#2e573b] transition">
-          Entrar no painel
-        </button>
-      </motion.form>
-    </section>
-  );
-}
 
 // ─── Orders Tab ───────────────────────────────────────────────────────────────
 
@@ -276,7 +223,7 @@ function OrdersTab({ orders, onUpdateStatus, onUpdatePayment }: {
 
 // ─── Frigobar Tab ─────────────────────────────────────────────────────────────
 
-function FrigobarTab({ consumed }: { consumed: Record<string, number> }) {
+function FrigobarTab({ consumed, guestName }: { consumed: Record<string, number>; guestName: string }) {
   const total = FRIGOBAR_ITEMS.reduce((sum, item) => sum + (consumed[item.name] || 0) * item.price, 0);
   const hasConsumption = Object.values(consumed).some(v => v > 0);
 
@@ -285,7 +232,7 @@ function FrigobarTab({ consumed }: { consumed: Record<string, number> }) {
       <div className="rounded-2xl bg-[#1a0f0a] p-4 text-white flex items-center justify-between">
         <div>
           <p className="text-xs text-white/50 uppercase tracking-widest">Consumação · {ROOM}</p>
-          <p className="font-semibold text-sm mt-0.5">{GUEST}</p>
+          <p className="font-semibold text-sm mt-0.5">{guestName}</p>
         </div>
         <div className="text-right">
           <p className="text-2xl font-bold text-[#c3a37a]">R$ {total}</p>
@@ -405,7 +352,11 @@ function HousekeepingTab({ requests, onUpdateStatus }: {
 
 // ─── Account Tab ──────────────────────────────────────────────────────────────
 
-function AccountTab({ orders, frigobarConsumed }: { orders: GuestOrder[]; frigobarConsumed: Record<string, number> }) {
+function AccountTab({ orders, frigobarConsumed, guestName }: {
+  orders: GuestOrder[];
+  frigobarConsumed: Record<string, number>;
+  guestName: string;
+}) {
   const pixPending = orders.filter(o => o.payment === 'pix' && o.paymentStatus === 'pending');
   const pixPaid = orders.filter(o => o.payment === 'pix' && o.paymentStatus === 'paid');
   const roomCharged = orders.filter(o => o.paymentStatus === 'charged');
@@ -418,7 +369,7 @@ function AccountTab({ orders, frigobarConsumed }: { orders: GuestOrder[]; frigob
     <div className="space-y-4">
       {/* Grand total */}
       <div className="rounded-2xl bg-[#1a0f0a] p-5 text-white">
-        <p className="text-xs uppercase tracking-widest text-white/40 mb-1">{ROOM} · {GUEST}</p>
+        <p className="text-xs uppercase tracking-widest text-white/40 mb-1">{ROOM} · {guestName}</p>
         <p className="font-serif text-4xl font-bold text-[#c3a37a]">R$ {grandTotal}</p>
         <p className="text-xs text-white/40 mt-1">total na conta do quarto</p>
         <div className="mt-4 grid grid-cols-2 gap-2">
