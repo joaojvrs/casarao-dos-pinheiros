@@ -8,13 +8,15 @@ const corsHeaders = {
 
 type Action =
   | 'summary'
+  | 'garcon_menu'
   | 'save_product'
   | 'open_tab'
   | 'create_order'
   | 'update_order_status'
   | 'close_tab'
   | 'open_cash'
-  | 'close_cash';
+  | 'close_cash'
+  | 'adjust_stock';
 
 interface ProductInput {
   id?: string;
@@ -29,6 +31,8 @@ interface ProductInput {
   stockQuantity: number;
   minStock: number;
   active?: boolean;
+  showOnGuestMenu?: boolean;
+  imageUrl?: string | null;
 }
 
 interface OrderItemInput {
@@ -123,16 +127,23 @@ async function summary(supabase: ReturnType<typeof createClient>) {
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
 
-  const [productsResult, ordersResult, tabsResult, salesResult, cashResult, categoriesResult] = await Promise.all([
-    supabase.from('restaurant_products').select('id, name, category_id, sku, unit, cost_price, sale_price, stock_quantity, min_stock, active, restaurant_categories(name)').order('name'),
-    supabase.from('restaurant_orders').select('id, order_number, origin, status, notes, total, created_at, restaurant_order_items(id, name, quantity, unit_price, total, status, notes)').order('created_at', { ascending: false }).limit(30),
+  const [
+    productsResult, ordersResult, tabsResult, salesResult, cashResult, categoriesResult,
+    movementsResult, receivablesResult, payablesResult, staffResult,
+  ] = await Promise.all([
+    supabase.from('restaurant_products').select('id, name, category_id, sku, unit, cost_price, sale_price, stock_quantity, min_stock, active, show_on_guest_menu, image_url, restaurant_categories(name)').order('name'),
+    supabase.from('restaurant_orders').select('id, order_number, tab_id, created_by, origin, status, notes, total, created_at, restaurant_order_items(id, name, quantity, unit_price, total, status, notes)').order('created_at', { ascending: false }).limit(30),
     supabase.from('restaurant_tabs').select('id, code, status, subtotal, discount, service_fee, total, opened_at, closed_at, restaurant_tables(code, location)').order('opened_at', { ascending: false }).limit(30),
-    supabase.from('restaurant_sales').select('id, sale_number, status, subtotal, discount, total, payment_method, sold_at').gte('sold_at', todayStart.toISOString()).order('sold_at', { ascending: false }),
+    supabase.from('restaurant_sales').select('id, sale_number, status, subtotal, discount, total, payment_method, sold_by, sold_at').gte('sold_at', todayStart.toISOString()).order('sold_at', { ascending: false }),
     supabase.from('restaurant_cash_sessions').select('id, status, opening_amount, closing_amount, opened_at, closed_at').order('opened_at', { ascending: false }).limit(1).maybeSingle(),
     supabase.from('restaurant_categories').select('id, name, active').eq('active', true).order('name'),
+    supabase.from('restaurant_stock_movements').select('id, movement_type, quantity, reason, created_at, reference_type, restaurant_products(name, unit)').gte('created_at', todayStart.toISOString()).order('created_at', { ascending: false }).limit(100),
+    supabase.from('restaurant_receivables').select('id, description, amount, due_date, status').eq('status', 'open').order('due_date'),
+    supabase.from('restaurant_payables').select('id, description, amount, due_date, status').eq('status', 'open').order('due_date'),
+    supabase.from('profiles').select('id, name').neq('role', 'visitor').order('name'),
   ]);
 
-  for (const result of [productsResult, ordersResult, tabsResult, salesResult, cashResult, categoriesResult]) {
+  for (const result of [productsResult, ordersResult, tabsResult, salesResult, cashResult, categoriesResult, movementsResult, receivablesResult, payablesResult, staffResult]) {
     if (result.error) throw result.error;
   }
 
@@ -151,6 +162,10 @@ async function summary(supabase: ReturnType<typeof createClient>) {
     tabs,
     sales,
     cashSession: cashResult.data || null,
+    stockMovements: movementsResult.data || [],
+    receivables: receivablesResult.data || [],
+    payables: payablesResult.data || [],
+    staff: staffResult.data || [],
     metrics: {
       activeOrders: activeOrders.length,
       openTabs: openTabs.length,
@@ -159,6 +174,24 @@ async function summary(supabase: ReturnType<typeof createClient>) {
       pendingRevenue: tabs.filter(tab => tab.status === 'pending_payment').reduce((sum, tab) => sum + Number(tab.total || 0), 0),
     },
   };
+}
+
+async function garconMenu(supabase: ReturnType<typeof createClient>) {
+  const [productsResult, tabsResult] = await Promise.all([
+    supabase
+      .from('restaurant_products')
+      .select('id, name, description, sale_price, stock_quantity, active, show_on_guest_menu, image_url, restaurant_categories(name)')
+      .eq('active', true)
+      .order('name'),
+    supabase
+      .from('restaurant_tabs')
+      .select('id, code, status, subtotal, total, restaurant_tables(code, location)')
+      .in('status', ['open', 'pending_payment'])
+      .order('opened_at', { ascending: false }),
+  ]);
+  if (productsResult.error) throw productsResult.error;
+  if (tabsResult.error) throw tabsResult.error;
+  return { products: productsResult.data || [], tabs: tabsResult.data || [] };
 }
 
 async function saveProduct(supabase: ReturnType<typeof createClient>, input: ProductInput) {
@@ -180,6 +213,8 @@ async function saveProduct(supabase: ReturnType<typeof createClient>, input: Pro
     stock_quantity: Number(input.stockQuantity || 0),
     min_stock: Number(input.minStock || 0),
     active: input.active ?? true,
+    show_on_guest_menu: input.showOnGuestMenu ?? false,
+    image_url: input.imageUrl?.trim() || null,
     updated_at: new Date().toISOString(),
   };
 
@@ -389,6 +424,40 @@ async function closeTab(supabase: ReturnType<typeof createClient>, userId: strin
   return sale;
 }
 
+async function adjustStock(supabase: ReturnType<typeof createClient>, userId: string, payload: Record<string, unknown>) {
+  const productId = String(payload.productId || '');
+  const qty = quantity(payload.quantity);
+  const reason = String(payload.reason || 'Entrada de estoque').trim();
+  if (!productId) throw new Error('Produto nao informado.');
+
+  const { data: product, error: productError } = await supabase
+    .from('restaurant_products')
+    .select('id, stock_quantity')
+    .eq('id', productId)
+    .single();
+  if (productError) throw productError;
+
+  const newQty = Number(product.stock_quantity) + qty;
+  const { error: updateError } = await supabase
+    .from('restaurant_products')
+    .update({ stock_quantity: newQty, updated_at: new Date().toISOString() })
+    .eq('id', productId);
+  if (updateError) throw updateError;
+
+  const { error: movementError } = await supabase.from('restaurant_stock_movements').insert({
+    product_id: productId,
+    movement_type: 'in',
+    quantity: qty,
+    unit_cost: 0,
+    reason,
+    reference_type: 'purchase',
+    created_by: userId,
+  });
+  if (movementError) throw movementError;
+
+  return { id: productId, new_quantity: newQty };
+}
+
 async function openCash(supabase: ReturnType<typeof createClient>, userId: string, payload: Record<string, unknown>) {
   const { data: current, error: currentError } = await supabase.from('restaurant_cash_sessions').select('id').eq('status', 'open').maybeSingle();
   if (currentError) throw currentError;
@@ -431,6 +500,7 @@ Deno.serve(async req => {
     if (!userId) return json({ error: 'Sessao invalida.' }, 401);
 
     if (action === 'summary') return json({ data: await summary(supabase) });
+    if (action === 'garcon_menu') return json({ data: await garconMenu(supabase) });
     if (action === 'save_product') {
       assertManagerAccess(role, permissions);
       return json({ data: await saveProduct(supabase, payload as unknown as ProductInput) }, 201);
@@ -441,6 +511,7 @@ Deno.serve(async req => {
     if (action === 'close_tab') return json({ data: await closeTab(supabase, userId, payload) }, 201);
     if (action === 'open_cash') return json({ data: await openCash(supabase, userId, payload) }, 201);
     if (action === 'close_cash') return json({ data: await closeCash(supabase, userId, payload) });
+    if (action === 'adjust_stock') return json({ data: await adjustStock(supabase, userId, payload) });
 
     return json({ error: 'Acao invalida.' }, 400);
   } catch (error) {

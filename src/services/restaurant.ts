@@ -1,15 +1,26 @@
 import { supabase } from '../lib/supabase';
-import type { RestaurantPaymentMethod, RestaurantProductInput, RestaurantSummary, RestaurantOrderStatus } from '../types/restaurant';
+import type {
+  GarconMenu,
+  MenuProduct,
+  RestaurantOrderStatus,
+  RestaurantPaymentMethod,
+  RestaurantProductInput,
+  RestaurantSummary,
+} from '../types/restaurant';
 
 type RestaurantAction =
   | 'summary'
+  | 'garcon_menu'
   | 'save_product'
   | 'open_tab'
   | 'create_order'
   | 'update_order_status'
   | 'close_tab'
   | 'open_cash'
-  | 'close_cash';
+  | 'close_cash'
+  | 'adjust_stock';
+
+type MenuAction = 'guest_menu' | 'place_guest_order';
 
 interface FunctionResponse<T> {
   data: T;
@@ -37,8 +48,34 @@ async function invokeRestaurant<T>(action: RestaurantAction, payload: Record<str
   return data.data;
 }
 
+async function invokeMenu<T>(action: MenuAction, payload: Record<string, unknown> = {}) {
+  const { data, error } = await supabase.functions.invoke<FunctionResponse<T>>('menu-operations', {
+    body: { action, payload },
+  });
+
+  if (error) throw new Error(await parseFunctionError(error));
+  if (!data) throw new Error('Operacao sem retorno do cardapio.');
+  return data.data;
+}
+
 export function getRestaurantSummary() {
   return invokeRestaurant<RestaurantSummary>('summary');
+}
+
+export function getGuestMenu() {
+  return invokeMenu<MenuProduct[]>('guest_menu');
+}
+
+export function placeGuestOrder(input: {
+  items: Array<{ productId: string; quantity: number; notes?: string }>;
+  notes?: string;
+  roomName?: string;
+}) {
+  return invokeMenu<{ orderId: string; orderNumber: string }>('place_guest_order', input as unknown as Record<string, unknown>);
+}
+
+export function getGarconMenu() {
+  return invokeRestaurant<GarconMenu>('garcon_menu');
 }
 
 export function saveRestaurantProduct(input: RestaurantProductInput) {
@@ -72,4 +109,8 @@ export function openRestaurantCash(input: { openingAmount: number; notes?: strin
 
 export function closeRestaurantCash(input: { sessionId: string; closingAmount: number; notes?: string }) {
   return invokeRestaurant<{ id: string }>('close_cash', input as unknown as Record<string, unknown>);
+}
+
+export function adjustRestaurantStock(input: { productId: string; quantity: number; reason?: string }) {
+  return invokeRestaurant<{ id: string; new_quantity: number }>('adjust_stock', input as unknown as Record<string, unknown>);
 }

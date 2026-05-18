@@ -9,19 +9,25 @@ type StaffRole = Exclude<AppRole, 'visitor' | 'guest' | 'master'>;
 
 const ROLE_LABELS: Record<StaffRole | 'master', string> = {
   attendant: 'Atendimento',
+  frontdesk: 'Recepcao',
   kitchen: 'Cozinha',
   housekeeping: 'Governanca',
+  financial: 'Financeiro',
+  hr: 'RH & Escalas',
   manager: 'Gerencia',
   admin: 'Administrador',
   master: 'Master',
 };
 
 const ROLE_PERMISSIONS: Record<StaffRole, PermissionSet> = {
-  attendant: { bookings: true, guests: true, roomService: true, payments: true },
+  attendant: { guests: true, roomService: true },
+  frontdesk: { bookings: true, guests: true, roomService: true },
   kitchen: { kitchen: true, roomService: true },
   housekeeping: { housekeeping: true, guests: true },
-  manager: { bookings: true, guests: true, kitchen: true, housekeeping: true, roomService: true, payments: true, reports: true },
-  admin: { bookings: true, guests: true, kitchen: true, housekeeping: true, roomService: true, payments: true, users: true, reports: true, settings: true },
+  financial: { payments: true, reports: true },
+  hr: { hr: true },
+  manager: { bookings: true, guests: true, kitchen: true, housekeeping: true, roomService: true, payments: true, reports: true, hr: true },
+  admin: { bookings: true, guests: true, kitchen: true, housekeeping: true, roomService: true, payments: true, users: true, reports: true, settings: true, hr: true },
 };
 
 const PERMISSION_LABELS: Record<keyof PermissionSet, string> = {
@@ -51,6 +57,10 @@ export function AccessPortal({ onBack }: { onBack: () => void }) {
   const [submitting, setSubmitting] = useState(false);
 
   const permissionEntries = useMemo(() => Object.entries(PERMISSION_LABELS) as Array<[keyof PermissionSet, string]>, []);
+  const customized = useMemo(
+    () => permissionEntries.some(([key]) => Boolean(permissions[key]) !== Boolean(ROLE_PERMISSIONS[role][key])),
+    [permissionEntries, permissions, role],
+  );
 
   useEffect(() => {
     getCurrentAccess().then(async access => {
@@ -73,9 +83,10 @@ export function AccessPortal({ onBack }: { onBack: () => void }) {
   };
 
   const togglePermission = (key: keyof PermissionSet) => {
-    if (!ROLE_PERMISSIONS[role][key]) return;
     setPermissions(prev => ({ ...prev, [key]: !prev[key] }));
   };
+
+  const resetPermissions = () => setPermissions(ROLE_PERMISSIONS[role]);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -147,18 +158,30 @@ export function AccessPortal({ onBack }: { onBack: () => void }) {
             </label>
 
             <div>
-              <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.22em] text-black/35">Permissoes</p>
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-black/35">Permissoes</p>
+                {customized && (
+                  <button type="button" onClick={resetPermissions} className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#735333] hover:text-[#20140d]">
+                    Restaurar padrao
+                  </button>
+                )}
+              </div>
+              <p className="mb-3 text-xs leading-5 text-black/45">
+                O perfil preenche um padrao, mas voce pode adicionar ou remover acessos para este usuario.
+              </p>
               <div className="grid grid-cols-2 gap-2">
                 {permissionEntries.map(([key, label]) => {
-                  const available = Boolean(ROLE_PERMISSIONS[role][key]);
+                  const standard = Boolean(ROLE_PERMISSIONS[role][key]);
                   const active = Boolean(permissions[key]);
                   return (
-                    <button key={key} type="button" disabled={!available} onClick={() => togglePermission(key)} className={`rounded-lg border px-3 py-2 text-left text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-35 ${active ? 'border-[#3a6b4a] bg-[#3a6b4a] text-white' : 'border-black/10 bg-white text-black/55'}`}>
-                      {label}
+                    <button key={key} type="button" onClick={() => togglePermission(key)} className={`rounded-lg border px-3 py-2 text-left text-xs font-medium transition ${active ? 'border-[#3a6b4a] bg-[#3a6b4a] text-white' : 'border-black/10 bg-white text-black/55 hover:border-[#9d7a4f]/50'}`}>
+                      <span className="block">{label}</span>
+                      {standard && <span className={`mt-1 block text-[9px] uppercase tracking-[0.12em] ${active ? 'text-white/65' : 'text-black/35'}`}>Padrao</span>}
                     </button>
                   );
                 })}
               </div>
+              {customized && <p className="mt-3 text-xs font-medium text-[#735333]">Este convite sera criado como acesso personalizado.</p>}
             </div>
 
             {error && <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-900">{error}</p>}

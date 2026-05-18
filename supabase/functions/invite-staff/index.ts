@@ -6,7 +6,7 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-const ALLOWED_ROLES = ['attendant', 'kitchen', 'housekeeping', 'manager', 'admin'] as const;
+const ALLOWED_ROLES = ['attendant', 'frontdesk', 'kitchen', 'housekeeping', 'financial', 'hr', 'manager', 'admin'] as const;
 type StaffRole = typeof ALLOWED_ROLES[number];
 
 interface InviteStaffRequest {
@@ -18,12 +18,17 @@ interface InviteStaffRequest {
 }
 
 const ROLE_PERMISSIONS: Record<StaffRole, Record<string, boolean>> = {
-  attendant: { bookings: true, guests: true, roomService: true, payments: true },
+  attendant: { guests: true, roomService: true },
+  frontdesk: { bookings: true, guests: true, roomService: true },
   kitchen: { kitchen: true, roomService: true },
   housekeeping: { housekeeping: true, guests: true },
+  financial: { payments: true, reports: true },
+  hr: { hr: true },
   manager: { bookings: true, guests: true, kitchen: true, housekeeping: true, roomService: true, payments: true, reports: true, hr: true },
   admin: { bookings: true, guests: true, kitchen: true, housekeeping: true, roomService: true, payments: true, users: true, reports: true, settings: true, hr: true },
 };
+
+const ALL_PERMISSIONS = ['bookings', 'guests', 'kitchen', 'housekeeping', 'roomService', 'payments', 'users', 'reports', 'settings', 'hr'] as const;
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -43,9 +48,15 @@ function randomPassword() {
 function sanitizePermissions(role: StaffRole, permissions: Record<string, boolean>) {
   if (role === 'admin') return ROLE_PERMISSIONS.admin;
 
-  const baseline = ROLE_PERMISSIONS[role];
+  const allowedSensitive = role === 'manager';
   return Object.fromEntries(
-    Object.entries({ ...baseline, ...permissions }).filter(([key, enabled]) => Boolean(enabled) && Boolean(baseline[key])),
+    ALL_PERMISSIONS
+      .map(key => [key, Boolean(permissions[key])] as const)
+      .filter(([key, enabled]) => {
+        if (!enabled) return false;
+        if ((key === 'users' || key === 'settings') && !allowedSensitive) return false;
+        return true;
+      }),
   );
 }
 

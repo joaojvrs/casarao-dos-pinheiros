@@ -61,7 +61,19 @@ export async function signOutUser() {
 
 export function getSessionRole(appMetadata: Record<string, unknown> | undefined): AppRole {
   const role = appMetadata?.role;
-  if (role === 'visitor' || role === 'guest' || role === 'attendant' || role === 'kitchen' || role === 'housekeeping' || role === 'manager' || role === 'admin' || role === 'master') {
+  if (
+    role === 'visitor' ||
+    role === 'guest' ||
+    role === 'attendant' ||
+    role === 'frontdesk' ||
+    role === 'kitchen' ||
+    role === 'housekeeping' ||
+    role === 'financial' ||
+    role === 'hr' ||
+    role === 'manager' ||
+    role === 'admin' ||
+    role === 'master'
+  ) {
     return role;
   }
   return 'visitor';

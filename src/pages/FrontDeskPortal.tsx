@@ -61,7 +61,7 @@ export function FrontDeskPortal({ onBack }: { onBack: () => void }) {
     return { start, end, status: 'todas', search: '' };
   });
 
-  const hasAccess = ['attendant', 'master', 'admin', 'manager'].includes(auth.role) || Boolean(auth.permissions.bookings) || Boolean(auth.permissions.guests);
+  const hasAccess = ['attendant', 'frontdesk', 'master', 'admin', 'manager'].includes(auth.role) || Boolean(auth.permissions.bookings) || Boolean(auth.permissions.guests);
   const canManage = ['master', 'admin', 'manager'].includes(auth.role);
 
   const load = async () => {

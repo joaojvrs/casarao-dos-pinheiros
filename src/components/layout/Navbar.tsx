@@ -28,7 +28,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onWeddingClick, onGuestClick, on
   }, [permissions, role]);
 
   const hasHRAccess = useMemo(
-    () => ['master', 'admin', 'manager'].includes(role) || Boolean(permissions.hr),
+    () => ['master', 'admin', 'manager', 'hr'].includes(role) || Boolean(permissions.hr),
     [role, permissions],
   );
 
@@ -38,12 +38,12 @@ export const Navbar: React.FC<NavbarProps> = ({ onWeddingClick, onGuestClick, on
   );
 
   const hasFrontDeskAccess = useMemo(
-    () => ['master', 'admin', 'manager', 'attendant'].includes(role) || Boolean(permissions.bookings) || Boolean(permissions.guests),
+    () => ['master', 'admin', 'manager', 'attendant', 'frontdesk'].includes(role) || Boolean(permissions.bookings) || Boolean(permissions.guests),
     [role, permissions],
   );
 
   const hasFinancialAccess = useMemo(
-    () => ['master', 'admin', 'manager'].includes(role) || Boolean(permissions.payments),
+    () => ['master', 'admin', 'manager', 'financial'].includes(role) || Boolean(permissions.payments),
     [role, permissions],
   );
 

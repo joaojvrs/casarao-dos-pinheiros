@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import QRCode from 'react-qr-code';
 import {
@@ -10,6 +10,8 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { getGuestMenu, placeGuestOrder } from '../services/restaurant';
+import type { MenuProduct } from '../types/restaurant';
 import type { GuestOrder, HKRequest, PaymentMethod } from '../types/portal';
 
 interface GuestPortalProps {
@@ -30,7 +32,7 @@ const DARK = '#1a0f0a';
 const GREEN = '#3a6b4a';
 
 const PIX_KEY = 'casarao@valeeden.com.br';
-const PIX_MERCHANT = 'CASARÃO VALE DO EDEN';
+const PIX_MERCHANT = 'CASARAO VALE DO EDEN';
 
 const IMG = {
   hero: 'https://images.unsplash.com/photo-1758250899745-c2bbd225a110?auto=format&fit=crop&w=2200&q=82',
@@ -46,15 +48,7 @@ const IMG = {
   wineFire: 'https://images.unsplash.com/photo-1612156604756-5ac001fc74d7?auto=format&fit=crop&w=1600&q=82',
 };
 
-const MENU = [
-  { name: 'Cafe da manha no deck', copy: 'Frutas, paes artesanais, cafe coado e mel local.', price: 148, eta: 25, image: IMG.breakfast, icon: Coffee, category: 'cafe' },
-  { name: 'Tabua Vale do Eden', copy: 'Queijos, castanhas, geleias e paes rusticos.', price: 186, eta: 18, image: IMG.deck, icon: Wine, category: 'vinhos' },
-  { name: 'Pinot da serra', copy: 'Vinho leve para noite fria e lareira acesa.', price: 230, eta: 12, image: IMG.wineFire, icon: GlassWater, category: 'vinhos' },
-  { name: 'Jantar MasterChef privativo', copy: 'Menu autoral servido no chale com mise en place discreta.', price: 420, eta: 55, image: IMG.room, icon: UtensilsCrossed, category: 'jantar' },
-  { name: 'Moqueca de Pintado', copy: 'Peixe do pantanal cozido no leite de coco com pimentoes e azeite de dende. Servida na panela de barro.', price: 118, eta: 40, image: IMG.leisure, icon: UtensilsCrossed, category: 'jantar' },
-  { name: 'Fondue de chocolate', copy: 'Frutas frescas, chocolate quente e final lento.', price: 132, eta: 22, image: IMG.pool, icon: Sparkles, category: 'sobremesas' },
-  { name: 'Kit banho botanico', copy: 'Sais, vela aromatica e toalhas aquecidas.', price: 96, eta: 14, image: IMG.bath, icon: Bath, category: 'amenities' },
-];
+const BRL_CENTS = (v: number) => `R$ ${(v / 100).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 
 const FRIGOBAR_ITEMS = [
   { name: 'Agua Mineral 500ml', standardQty: 2, price: 0, icon: GlassWater, note: 'Incluso' },
@@ -133,9 +127,12 @@ export const GuestPortal: React.FC<GuestPortalProps> = ({
   const [cart, setCart] = useState<Cart>({});
   const [paymentModal, setPaymentModal] = useState<'select' | 'pix' | 'room' | null>(null);
   const [orderConfirmed, setOrderConfirmed] = useState(false);
+  const [orderPlacing, setOrderPlacing] = useState(false);
   const [hkTime, setHkTime] = useState('15:30');
   const [hkServices, setHkServices] = useState<string[]>(['Toalhas aquecidas']);
   const [hkConfirmed, setHkConfirmed] = useState('');
+  const [menuItems, setMenuItems] = useState<MenuProduct[]>([]);
+  const [menuLoading, setMenuLoading] = useState(true);
   const countdown = useCountdown();
 
   const mood = useMemo(() => {
@@ -145,19 +142,39 @@ export const GuestPortal: React.FC<GuestPortalProps> = ({
     return { period: 'noite', weather: '15°C · noite fria', note: 'A noite pede vinho, lareira e um ritmo mais intimo no chale.' };
   }, []);
 
-  const cartTotal = MENU.reduce((sum, item) => sum + (cart[item.name] || 0) * item.price, 0);
-  const cartCount = Object.values(cart).reduce((s, v) => s + v, 0);
+  useEffect(() => {
+    getGuestMenu()
+      .then(items => setMenuItems(items))
+      .catch(() => setMenuItems([]))
+      .finally(() => setMenuLoading(false));
+  }, []);
+
+  const cartTotal = useMemo(
+    () => menuItems.reduce((sum, item) => sum + (cart[item.id] || 0) * item.sale_price, 0),
+    [menuItems, cart],
+  );
+  const cartCount = useMemo(() => Object.values(cart).reduce((s, v) => s + v, 0), [cart]);
   const guestName = String(auth.user?.user_metadata?.full_name || auth.user?.email || 'Hóspede');
   const firstName = guestName.split(' ')[0] || 'Hóspede';
 
-  const changeCart = (name: string, delta: number) =>
-    setCart(c => ({ ...c, [name]: Math.max(0, (c[name] || 0) + delta) }));
+  const changeCart = useCallback((id: string, delta: number) =>
+    setCart(c => ({ ...c, [id]: Math.max(0, (c[id] || 0) + delta) })), []);
 
-  const confirmPayment = (method: PaymentMethod) => {
-    const items = MENU.filter(m => (cart[m.name] || 0) > 0).map(m => ({ name: m.name, qty: cart[m.name], price: m.price }));
+  const confirmPayment = async (method: PaymentMethod) => {
+    const cartedItems = menuItems.filter(m => (cart[m.id] || 0) > 0);
+    setOrderPlacing(true);
+    try {
+      await placeGuestOrder({
+        items: cartedItems.map(m => ({ productId: m.id, quantity: cart[m.id] })),
+        roomName: 'Chale Pinheiros',
+      });
+    } catch {
+      // persist to DB best-effort; still confirm to guest
+    }
     const order: GuestOrder = {
       id: uid(), room: 'Chalé Pinheiros', guestName,
-      items, total: cartTotal, payment: method,
+      items: cartedItems.map(m => ({ name: m.name, qty: cart[m.id], price: m.sale_price })),
+      total: cartTotal, payment: method,
       paymentStatus: method === 'pix' ? 'pending' : 'charged',
       status: 'pending', placedAt: new Date().toISOString(),
     };
@@ -165,6 +182,7 @@ export const GuestPortal: React.FC<GuestPortalProps> = ({
     setCart({});
     setOrderConfirmed(true);
     setPaymentModal(null);
+    setOrderPlacing(false);
     setTimeout(() => setOrderConfirmed(false), 4000);
   };
 
@@ -215,6 +233,7 @@ export const GuestPortal: React.FC<GuestPortalProps> = ({
             {activeTab === 'home' && <HomeTab mood={mood} countdown={countdown} guestName={firstName} />}
             {activeTab === 'roomservice' && (
               <RoomServiceTab
+                menu={menuItems} menuLoading={menuLoading}
                 cart={cart} changeCart={changeCart} total={cartTotal} count={cartCount}
                 onCheckout={() => setPaymentModal('select')}
                 confirmed={orderConfirmed}
@@ -262,8 +281,9 @@ export const GuestPortal: React.FC<GuestPortalProps> = ({
           <PaymentModal
             mode={paymentModal}
             total={cartTotal}
+            placing={orderPlacing}
             onSelectPix={() => setPaymentModal('pix')}
-            onSelectRoom={() => { confirmPayment('room'); setPaymentModal(null); }}
+            onSelectRoom={() => confirmPayment('room')}
             onConfirmPix={() => confirmPayment('pix')}
             onClose={() => setPaymentModal(null)}
           />
@@ -343,64 +363,165 @@ function HomeTab({ mood, countdown, guestName }: {
 
 // ─── Room Service Tab ─────────────────────────────────────────────────────────
 
-function RoomServiceTab({ cart, changeCart, total, count, onCheckout, confirmed }: {
-  cart: Cart; changeCart: (n: string, d: number) => void;
+function RoomServiceTab({ menu, menuLoading, cart, changeCart, total, count, onCheckout, confirmed }: {
+  menu: MenuProduct[]; menuLoading: boolean;
+  cart: Cart; changeCart: (id: string, d: number) => void;
   total: number; count: number; onCheckout: () => void; confirmed: boolean;
 }) {
+  const [categoryFilter, setCategoryFilter] = useState('');
+
+  const categories = useMemo(
+    () => [...new Set(menu.map(m => {
+      const cat = Array.isArray(m.restaurant_categories) ? m.restaurant_categories[0] : m.restaurant_categories;
+      return cat?.name || 'Outros';
+    }))].sort(),
+    [menu],
+  );
+
+  const getCategory = (m: MenuProduct) => {
+    const cat = Array.isArray(m.restaurant_categories) ? m.restaurant_categories[0] : m.restaurant_categories;
+    return cat?.name || 'Outros';
+  };
+
+  const grouped = useMemo(() => {
+    const filtered = categoryFilter ? menu.filter(m => getCategory(m) === categoryFilter) : menu;
+    const map: Record<string, MenuProduct[]> = {};
+    for (const m of filtered) {
+      const cat = getCategory(m);
+      if (!map[cat]) map[cat] = [];
+      map[cat].push(m);
+    }
+    return map;
+  }, [menu, categoryFilter]);
+
   return (
     <div className="space-y-5">
-      <SectionLabel eyebrow="Room Service" title="Do cafe ao vinho, no seu tempo." />
+      {/* Header */}
+      <div>
+        <p className="text-[9px] font-bold uppercase tracking-[0.4em] text-[#c3a37a]">Room Service</p>
+        <h2 className="font-serif text-3xl italic leading-tight mt-0.5">Do café ao vinho,<br />no seu tempo.</h2>
+        <p className="mt-2 text-xs text-[#1a0f0a]/45">Entrega no chalé em até 30 minutos.</p>
+      </div>
 
+      {/* Confirmation */}
       <AnimatePresence>
         {confirmed && (
-          <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="flex items-center gap-3 rounded-xl bg-[#3a6b4a]/15 border border-[#3a6b4a]/30 p-4">
+          <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+            className="flex items-center gap-3 rounded-xl bg-[#3a6b4a]/12 border border-[#3a6b4a]/25 p-4">
             <Check size={18} className="text-[#3a6b4a] shrink-0" />
-            <p className="text-sm text-[#2e573b] font-medium">Pedido confirmado! Entrega em aproximadamente 20–30 min.</p>
+            <p className="text-sm text-[#2e573b] font-medium">Pedido confirmado! Em caminho ao seu chalé.</p>
           </motion.div>
         )}
       </AnimatePresence>
 
-      <div className="space-y-4">
-        {MENU.map(item => {
-          const Icon = item.icon;
-          const qty = cart[item.name] || 0;
-          return (
-            <div key={item.name} className="flex gap-4 rounded-xl bg-white p-4 shadow-sm">
-              <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-lg">
-                <img src={item.image} alt="" className="h-full w-full object-cover" />
-                <span className="absolute top-1 left-1 rounded-full bg-[#c3a37a] px-1.5 py-0.5 text-[8px] font-bold uppercase text-[#1a0f0a]">{item.category}</span>
-              </div>
-              <div className="flex flex-1 flex-col justify-between min-w-0">
-                <div>
-                  <h3 className="text-sm font-semibold leading-tight">{item.name}</h3>
-                  <p className="mt-0.5 text-xs text-[#1a0f0a]/50 line-clamp-2">{item.copy}</p>
-                </div>
-                <div className="flex items-center justify-between mt-2">
-                  <span className="text-sm font-bold text-[#1a0f0a]">R$ {item.price}</span>
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => changeCart(item.name, -1)} className="flex h-7 w-7 items-center justify-center rounded-full border border-[#1a0f0a]/15 text-[#1a0f0a]/60 hover:border-[#1a0f0a]/40 transition">
-                      <Minus size={12} />
-                    </button>
-                    <span className="w-5 text-center text-sm font-mono font-semibold">{qty}</span>
-                    <button onClick={() => changeCart(item.name, 1)} className="flex h-7 w-7 items-center justify-center rounded-full bg-[#1a0f0a] text-white hover:bg-[#c3a37a] hover:text-[#1a0f0a] transition">
-                      <Plus size={12} />
-                    </button>
-                  </div>
-                </div>
+      {/* Category chips */}
+      {!menuLoading && categories.length > 1 && (
+        <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+          <button onClick={() => setCategoryFilter('')}
+            className={`shrink-0 rounded-full px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide transition ${!categoryFilter ? 'bg-[#1a0f0a] text-white' : 'bg-white border border-[#1a0f0a]/12 text-[#1a0f0a]/55'}`}>
+            Tudo
+          </button>
+          {categories.map(cat => (
+            <button key={cat} onClick={() => setCategoryFilter(cat === categoryFilter ? '' : cat)}
+              className={`shrink-0 rounded-full px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide transition ${categoryFilter === cat ? 'bg-[#c3a37a] text-[#1a0f0a]' : 'bg-white border border-[#1a0f0a]/12 text-[#1a0f0a]/55'}`}>
+              {cat}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Skeleton while loading */}
+      {menuLoading && (
+        <div className="space-y-3">
+          {Array.from({ length: 4 }, (_, i) => (
+            <div key={i} className="flex gap-4 rounded-2xl bg-white p-4 shadow-sm animate-pulse">
+              <div className="h-20 w-20 shrink-0 rounded-xl bg-black/8" />
+              <div className="flex-1 space-y-2.5">
+                <div className="h-4 w-2/3 rounded bg-black/8" />
+                <div className="h-3 w-full rounded bg-black/8" />
+                <div className="h-3 w-1/3 rounded bg-black/8" />
               </div>
             </div>
-          );
-        })}
-      </div>
+          ))}
+        </div>
+      )}
 
+      {/* Menu grouped by category */}
+      {!menuLoading && (
+        <div className="space-y-6">
+          {Object.entries(grouped).map(([cat, items]) => (
+            <div key={cat}>
+              <div className="flex items-center gap-3 mb-3">
+                <p className="font-serif text-xl italic text-[#1a0f0a]">{cat}</p>
+                <div className="flex-1 h-px bg-[#1a0f0a]/8" />
+              </div>
+              <div className="space-y-3">
+                {items.map(item => {
+                  const qty = cart[item.id] || 0;
+                  return (
+                    <div key={item.id} className="flex gap-4 rounded-2xl bg-white p-4 shadow-sm transition hover:shadow-md">
+                      {/* Photo */}
+                      <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl">
+                        {item.image_url ? (
+                          <img src={item.image_url} alt={item.name} className="h-full w-full object-cover" />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center bg-[#f4efe6]">
+                            <UtensilsCrossed size={22} className="text-[#c3a37a]" />
+                          </div>
+                        )}
+                      </div>
+                      {/* Info */}
+                      <div className="flex flex-1 flex-col justify-between min-w-0">
+                        <div>
+                          <h3 className="text-sm font-semibold leading-tight">{item.name}</h3>
+                          {item.description && (
+                            <p className="mt-0.5 text-xs text-[#1a0f0a]/45 line-clamp-2 leading-relaxed">{item.description}</p>
+                          )}
+                        </div>
+                        <div className="flex items-center justify-between mt-2">
+                          <span className="font-bold text-[#1a0f0a]">{BRL_CENTS(item.sale_price)}</span>
+                          <div className="flex items-center gap-2">
+                            {qty > 0 && (
+                              <>
+                                <button onClick={() => changeCart(item.id, -1)}
+                                  className="flex h-7 w-7 items-center justify-center rounded-full border border-[#1a0f0a]/15 text-[#1a0f0a]/55 hover:border-[#1a0f0a]/40 transition">
+                                  <Minus size={11} />
+                                </button>
+                                <span className="w-5 text-center text-sm font-bold">{qty}</span>
+                              </>
+                            )}
+                            <button onClick={() => changeCart(item.id, 1)}
+                              className="flex h-7 w-7 items-center justify-center rounded-full bg-[#1a0f0a] text-white hover:bg-[#c3a37a] hover:text-[#1a0f0a] transition">
+                              <Plus size={11} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+          {menu.length === 0 && !menuLoading && (
+            <div className="rounded-2xl border border-dashed border-[#1a0f0a]/12 bg-white p-8 text-center">
+              <UtensilsCrossed size={28} className="mx-auto mb-3 text-[#c3a37a]/50" />
+              <p className="text-sm text-[#1a0f0a]/45">Cardápio sendo preparado. Volte em breve.</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Sticky cart bar */}
       {count > 0 && (
         <div className="sticky bottom-24 rounded-2xl bg-[#1a0f0a] p-4 shadow-xl">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-sm text-white/60">{count} {count === 1 ? 'item' : 'itens'}</span>
-            <span className="text-lg font-bold text-[#c3a37a]">R$ {total}</span>
+            <span className="text-sm text-white/55">{count} {count === 1 ? 'item' : 'itens'}</span>
+            <span className="text-lg font-bold text-[#c3a37a]">{BRL_CENTS(total)}</span>
           </div>
-          <button onClick={onCheckout} className="w-full rounded-full bg-[#c3a37a] py-3.5 text-xs font-bold uppercase tracking-[0.2em] text-[#1a0f0a] hover:bg-white transition">
-            Confirmar Pedido
+          <button onClick={onCheckout}
+            className="w-full rounded-full bg-[#c3a37a] py-3.5 text-xs font-bold uppercase tracking-[0.2em] text-[#1a0f0a] hover:bg-amber-200 transition">
+            Confirmar pedido
           </button>
         </div>
       )}
@@ -648,9 +769,10 @@ function ConciergeTab() {
 
 // ─── Payment Modal ────────────────────────────────────────────────────────────
 
-function PaymentModal({ mode, total, onSelectPix, onSelectRoom, onConfirmPix, onClose }: {
+function PaymentModal({ mode, total, placing, onSelectPix, onSelectRoom, onConfirmPix, onClose }: {
   mode: 'select' | 'pix' | 'room';
   total: number;
+  placing: boolean;
   onSelectPix: () => void;
   onSelectRoom: () => void;
   onConfirmPix: () => void;
@@ -721,8 +843,8 @@ function PaymentModal({ mode, total, onSelectPix, onSelectRoom, onConfirmPix, on
               {copied ? <><Check size={13} className="text-[#3a6b4a]" /> Chave copiada!</> : <><Copy size={13} /> Copiar chave PIX · {PIX_KEY}</>}
             </button>
             <p className="text-[10px] text-[#1a0f0a]/35 text-center">Após o pagamento, toque em confirmar abaixo.</p>
-            <button onClick={onConfirmPix} className="w-full rounded-full bg-[#3a6b4a] py-3.5 text-xs font-bold uppercase tracking-[0.2em] text-white hover:bg-[#2e573b] transition">
-              Confirmei o pagamento
+            <button onClick={onConfirmPix} disabled={placing} className="w-full rounded-full bg-[#3a6b4a] py-3.5 text-xs font-bold uppercase tracking-[0.2em] text-white hover:bg-[#2e573b] transition disabled:opacity-60">
+              {placing ? 'Processando...' : 'Confirmei o pagamento'}
             </button>
           </div>
         )}

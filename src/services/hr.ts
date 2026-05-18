@@ -25,7 +25,23 @@ async function parseFunctionError(error: unknown) {
   if (!response) return error instanceof Error ? error.message : 'Nao foi possivel concluir a operacao.';
 
   try {
-    const body = await response.json() as { error?: string };
+    const body = await response.clone().json() as { error?: string; message?: string };
+    return body.error || body.message || 'Nao foi possivel concluir a operacao.';
+  } catch {
+    try {
+      const text = await response.clone().text();
+      if (text) return text;
+    } catch {
+      // Keep the generic message when the response body is unavailable.
+    }
+  }
+
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  try {
+    const body = await response.json() as { error?: string; message?: string };
     return body.error || 'Nao foi possivel concluir a operacao.';
   } catch {
     return 'Nao foi possivel concluir a operacao.';

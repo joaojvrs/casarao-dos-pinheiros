@@ -1,4 +1,15 @@
-export type AppRole = 'visitor' | 'guest' | 'attendant' | 'kitchen' | 'housekeeping' | 'manager' | 'admin' | 'master';
+export type AppRole =
+  | 'visitor'
+  | 'guest'
+  | 'attendant'
+  | 'frontdesk'
+  | 'kitchen'
+  | 'housekeeping'
+  | 'financial'
+  | 'hr'
+  | 'manager'
+  | 'admin'
+  | 'master';
 
 export interface PermissionSet {
   bookings?: boolean;

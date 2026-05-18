@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { motion } from 'motion/react';
 import {
   ArrowLeft,
   BedDouble,
@@ -13,9 +12,10 @@ import {
   Shield,
   Sparkles,
   Users,
+  UtensilsCrossed,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { getCurrentAccess } from '../services/auth';
+import { useAuth } from '../contexts/AuthContext';
 import { getOperationsSummary } from '../services/operations';
 import type { PermissionSet } from '../types/auth';
 import type { AppPage } from '../types/navigation';
@@ -41,38 +41,27 @@ const MODULES: ModuleItem[] = [
   { title: 'Portal do Hospede', description: 'Visao da experiencia do hospede e solicitacoes.', page: 'guest', icon: Sparkles },
   { title: 'Acessos', description: 'Convidar equipe, perfis e permissoes por area.', page: 'access', permission: 'users', icon: Users },
   { title: 'RH & Escalas', description: 'Escalas semanais, ponto eletronico, equipe e ocorrencias.', page: 'hr', permission: 'hr', icon: CalendarDays },
+  { title: 'Garcom', description: 'Lance pedidos no restaurante, gerencie comandas pelo celular.', page: 'garcom', permission: 'kitchen', icon: UtensilsCrossed },
 ];
 
 export function OperationsPortal({ onBack, onNavigate }: { onBack: () => void; onNavigate: (page: AppPage) => void }) {
-  const [loading, setLoading] = useState(true);
-  const [allowed, setAllowed] = useState(false);
-  const [role, setRole] = useState('visitor');
-  const [permissions, setPermissions] = useState<PermissionSet>({});
+  const { role, permissions } = useAuth();
   const [summary, setSummary] = useState<OperationsSummary | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(true);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    let mounted = true;
-    const load = async () => {
-      try {
-        const access = await getCurrentAccess();
-        if (!mounted) return;
-        setRole(access.role);
-        setPermissions(access.permissions);
-        setAllowed(access.role !== 'guest' && access.role !== 'visitor');
+  const allowed = role !== 'guest' && role !== 'visitor';
 
-        if (access.role !== 'guest' && access.role !== 'visitor') {
-          setSummary(await getOperationsSummary());
-        }
-      } catch (err) {
-        if (mounted) setError(err instanceof Error ? err.message : 'Nao foi possivel carregar o CRM.');
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    };
-    load();
+  useEffect(() => {
+    if (!allowed) return;
+    let mounted = true;
+    setSummaryLoading(true);
+    getOperationsSummary()
+      .then(data => { if (mounted) setSummary(data); })
+      .catch(err => { if (mounted) setError(err instanceof Error ? err.message : 'Nao foi possivel carregar o CRM.'); })
+      .finally(() => { if (mounted) setSummaryLoading(false); });
     return () => { mounted = false; };
-  }, []);
+  }, [allowed]);
 
   const modules = useMemo(() => {
     const isMaster = role === 'master';
@@ -83,10 +72,6 @@ export function OperationsPortal({ onBack, onNavigate }: { onBack: () => void; o
       return Boolean(permissions[item.permission]);
     });
   }, [permissions, role]);
-
-  if (loading) {
-    return <div className="min-h-screen bg-[#f7f3ea] flex items-center justify-center text-sm text-black/50">Carregando acesso da equipe...</div>;
-  }
 
   if (!allowed) {
     return (
@@ -117,10 +102,10 @@ export function OperationsPortal({ onBack, onNavigate }: { onBack: () => void; o
         {error && <p className="mb-5 rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-900">{error}</p>}
 
         <div className="grid gap-4 md:grid-cols-4">
-          <Metric icon={Users} label="Hospedes ativos" value={String(summary?.activeGuests || 0)} />
-          <Metric icon={BedDouble} label="Hospedagens ativas" value={String(summary?.activeBookings || 0)} />
-          <Metric icon={Gauge} label="Reservas no mes" value={String(summary?.monthBookings || 0)} />
-          <Metric icon={CreditCard} label="Ticket medio" value={summary?.canViewFinancial ? BRL.format((summary.averageTicket || 0) / 100) : 'Restrito'} />
+          <Metric icon={Users} label="Hospedes ativos" value={summaryLoading ? '...' : String(summary?.activeGuests || 0)} />
+          <Metric icon={BedDouble} label="Hospedagens ativas" value={summaryLoading ? '...' : String(summary?.activeBookings || 0)} />
+          <Metric icon={Gauge} label="Reservas no mes" value={summaryLoading ? '...' : String(summary?.monthBookings || 0)} />
+          <Metric icon={CreditCard} label="Ticket medio" value={summaryLoading ? '...' : (summary?.canViewFinancial ? BRL.format((summary.averageTicket || 0) / 100) : 'Restrito')} />
         </div>
 
         {summary?.canViewFinancial && (
@@ -153,16 +138,30 @@ export function OperationsPortal({ onBack, onNavigate }: { onBack: () => void; o
         <section className="mt-6 rounded-lg border border-black/8 bg-white p-5 shadow-sm">
           <h2 className="font-serif text-2xl">Hospedagens recentes</h2>
           <div className="mt-4 space-y-3">
-            {(summary?.recentBookings || []).map(booking => (
-              <article key={booking.id} className="flex flex-col gap-3 rounded-lg border border-black/8 p-4 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <p className="font-semibold">{booking.confirmationCode} · {booking.guest || 'Hospede'}</p>
-                  <p className="mt-1 text-sm text-black/45">{booking.accommodation || 'Acomodacao'} · {booking.checkIn} ate {booking.checkOut} · {booking.guestsCount} hospede{booking.guestsCount === 1 ? '' : 's'}</p>
+            {summaryLoading ? (
+              Array.from({ length: 3 }, (_, i) => (
+                <div key={i} className="animate-pulse flex items-center gap-4 rounded-lg border border-black/8 p-4">
+                  <div className="flex-1 space-y-2">
+                    <div className="h-4 w-1/3 rounded bg-black/8" />
+                    <div className="h-3 w-2/3 rounded bg-black/8" />
+                  </div>
+                  <div className="h-4 w-20 rounded bg-black/8" />
                 </div>
-                <span className="text-sm font-semibold text-black/70">{summary?.canViewFinancial ? BRL.format(booking.total / 100) : booking.status}</span>
-              </article>
-            ))}
-            {!summary?.recentBookings?.length && <p className="rounded-lg bg-[#faf7f0] p-4 text-sm text-black/45">Nenhuma hospedagem recente encontrada.</p>}
+              ))
+            ) : (
+              <>
+                {(summary?.recentBookings || []).map(booking => (
+                  <article key={booking.id} className="flex flex-col gap-3 rounded-lg border border-black/8 p-4 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <p className="font-semibold">{booking.confirmationCode} · {booking.guest || 'Hospede'}</p>
+                      <p className="mt-1 text-sm text-black/45">{booking.accommodation || 'Acomodacao'} · {booking.checkIn} ate {booking.checkOut} · {booking.guestsCount} hospede{booking.guestsCount === 1 ? '' : 's'}</p>
+                    </div>
+                    <span className="text-sm font-semibold text-black/70">{summary?.canViewFinancial ? BRL.format(booking.total / 100) : booking.status}</span>
+                  </article>
+                ))}
+                {!summary?.recentBookings?.length && <p className="rounded-lg bg-[#faf7f0] p-4 text-sm text-black/45">Nenhuma hospedagem recente encontrada.</p>}
+              </>
+            )}
           </div>
         </section>
       </section>

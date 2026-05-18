@@ -191,7 +191,7 @@ async function summary(supabase: ReturnType<typeof createClient>, payload: Recor
   const [employeesResult, schedulesResult, timeResult, occurrencesResult, productivityResult] = await Promise.all([
     supabase
       .from('hr_employees')
-      .select('id, cargo, setor, turno_padrao, data_admissao, status, foto_url, observacoes, profiles(id, full_name, email, avatar_url: foto_url)')
+      .select('id, cargo, setor, turno_padrao, data_admissao, status, foto_url, observacoes, profiles(id, full_name, email)')
       .order('created_at'),
     supabase
       .from('hr_schedules')
@@ -207,7 +207,7 @@ async function summary(supabase: ReturnType<typeof createClient>, payload: Recor
       .order('data', { ascending: false }),
     supabase
       .from('hr_occurrences')
-      .select('id, employee_id, tipo, descricao, data, profiles!registrado_por(full_name)')
+      .select('id, employee_id, tipo, descricao, data, registrado_por')
       .gte('data', monthStart)
       .order('data', { ascending: false })
       .limit(50),
@@ -223,29 +223,38 @@ async function summary(supabase: ReturnType<typeof createClient>, payload: Recor
   }
 
   const employees = employeesResult.data || [];
+  const employeesWithProfiles = employees.map(employee => {
+    const profiles = Array.isArray(employee.profiles)
+      ? employee.profiles.map(profile => ({ ...profile, avatar_url: null }))
+      : employee.profiles
+        ? { ...employee.profiles, avatar_url: null }
+        : employee.profiles;
+
+    return { ...employee, profiles };
+  });
   const schedules = schedulesResult.data || [];
   const timeRecords = timeResult.data || [];
 
   const alerts = calcAlerts(
-    employees.map(e => ({ id: e.id, setor: e.setor })),
+    employeesWithProfiles.map(e => ({ id: e.id, setor: e.setor })),
     schedules as { employee_id: string; data: string; turno: string }[],
     timeRecords as { employee_id: string; horas_trabalhadas: number | null }[],
     weekStart,
   );
 
-  const onLeave = employees.filter(e => e.status !== 'ativo').length;
+  const onLeave = employeesWithProfiles.filter(e => e.status !== 'ativo').length;
   const overtimeAlerts = alerts.filter(a => a.type === 'overtime').length;
 
   return {
-    employees,
+    employees: employeesWithProfiles,
     schedules,
     timeRecords,
     occurrences: occurrencesResult.data || [],
     productivity: productivityResult.data || [],
     alerts,
     metrics: {
-      totalEmployees: employees.length,
-      activeEmployees: employees.filter(e => e.status === 'ativo').length,
+      totalEmployees: employeesWithProfiles.length,
+      activeEmployees: employeesWithProfiles.filter(e => e.status === 'ativo').length,
       onLeave,
       overtimeAlerts,
     },

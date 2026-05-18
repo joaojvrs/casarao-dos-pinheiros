@@ -50,7 +50,7 @@ export function FinancialPortal({ onBack }: { onBack: () => void }) {
     return { inicio, fim };
   });
 
-  const hasAccess = ['master', 'admin', 'manager'].includes(auth.role) || Boolean(auth.permissions.payments);
+  const hasAccess = ['master', 'admin', 'manager', 'financial'].includes(auth.role) || Boolean(auth.permissions.payments);
 
   const reload = async () => {
     setError('');

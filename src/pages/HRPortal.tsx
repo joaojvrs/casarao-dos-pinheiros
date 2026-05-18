@@ -9,7 +9,6 @@ import {
   Clock,
   Download,
   Info,
-  Loader2,
   Plus,
   Search,
   Shield,
@@ -135,7 +134,7 @@ export function HRPortal({ onBack }: { onBack: () => void }) {
   const [weekOffset, setWeekOffset] = useState(0);
 
   const canAccess = useMemo(
-    () => ['master', 'admin', 'manager'].includes(role) || Boolean(permissions.hr),
+    () => ['master', 'admin', 'manager', 'hr'].includes(role) || Boolean(permissions.hr),
     [role, permissions],
   );
 
@@ -234,9 +233,38 @@ export function HRPortal({ onBack }: { onBack: () => void }) {
         </nav>
 
         {loading ? (
-          <div className="flex min-h-[360px] items-center justify-center rounded-lg border border-black/8 bg-white">
-            <Loader2 className="animate-spin text-[#9d7a4f]" size={30} />
-          </div>
+          <>
+            {activeTab === 'team' && (
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {Array.from({ length: 6 }, (_, i) => (
+                  <div key={i} className="animate-pulse rounded-lg border border-black/8 bg-white p-5">
+                    <div className="flex items-start gap-3">
+                      <div className="h-12 w-12 shrink-0 rounded-full bg-black/8" />
+                      <div className="flex-1 space-y-2.5">
+                        <div className="h-4 w-3/4 rounded bg-black/8" />
+                        <div className="h-3 w-1/2 rounded bg-black/8" />
+                        <div className="h-3 w-1/3 rounded bg-black/8" />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {activeTab !== 'team' && (
+              <div className="animate-pulse space-y-3 rounded-lg border border-black/8 bg-white p-5">
+                {Array.from({ length: 5 }, (_, i) => (
+                  <div key={i} className="flex items-center gap-4">
+                    <div className="h-10 w-10 shrink-0 rounded-full bg-black/8" />
+                    <div className="flex-1 space-y-2">
+                      <div className="h-4 w-1/3 rounded bg-black/8" />
+                      <div className="h-3 w-1/4 rounded bg-black/8" />
+                    </div>
+                    <div className="h-8 w-24 rounded bg-black/8" />
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
         ) : (
           <>
             {activeTab === 'schedules' && (

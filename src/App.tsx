@@ -34,6 +34,7 @@ const KitchenPortal = lazy(() => import('./pages/KitchenPortal').then(m => ({ de
 const HRPortal = lazy(() => import('./pages/HRPortal').then(m => ({ default: m.HRPortal })));
 const HousekeepingPortal = lazy(() => import('./pages/HousekeepingPortal').then(m => ({ default: m.HousekeepingPortal })));
 const FinancialPortal = lazy(() => import('./pages/FinancialPortal').then(m => ({ default: m.FinancialPortal })));
+const GarcomPortal = lazy(() => import('./pages/GarcomPortal').then(m => ({ default: m.GarcomPortal })));
 
 const ROUTES: Record<AppPage, string> = {
   home: '/',
@@ -49,6 +50,7 @@ const ROUTES: Record<AppPage, string> = {
   operations: '/equipe',
   hr: '/equipe/rh',
   financial: '/equipe/financeiro',
+  garcom: '/equipe/garcom',
 };
 
 const Spinner = () => (
@@ -73,15 +75,15 @@ function Guard({ children, teamOnly = false, guestOnly = false, adminOnly = fals
   if (teamOnly && (auth.role === 'visitor' || auth.role === 'guest')) return <Navigate to={getDefaultRouteForAccess(auth.role, auth.permissions)} replace state={{ from: location.pathname }} />;
   if (guestOnly && !['guest', 'master', 'admin', 'manager'].includes(auth.role)) return <Navigate to={getDefaultRouteForAccess(auth.role, auth.permissions)} replace state={{ from: location.pathname }} />;
   if (adminOnly && auth.role !== 'master' && auth.role !== 'admin') return <Navigate to="/equipe" replace />;
-  if (permission && auth.role !== 'master' && auth.role !== 'admin' && auth.role !== 'manager' && auth.role !== permission && !auth.permissions[permission]) return <Navigate to="/equipe" replace />;
-  if (permissionAny && auth.role !== 'master' && auth.role !== 'admin' && auth.role !== 'manager' && !permissionAny.some(item => auth.role === item || auth.permissions[item])) return <Navigate to="/equipe" replace />;
+  if (permission && auth.role !== 'master' && auth.role !== 'admin' && auth.role !== 'manager' && !auth.permissions[permission]) return <Navigate to="/equipe" replace />;
+  if (permissionAny && auth.role !== 'master' && auth.role !== 'admin' && auth.role !== 'manager' && !permissionAny.some(item => auth.permissions[item])) return <Navigate to="/equipe" replace />;
 
   return children;
 }
 
 function HomePage({ navigatePage }: { navigatePage: (page: AppPage) => void }) {
   return (
-    <motion.div key="home" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.45 }}>
+    <motion.div key="home" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
       <Navbar
         onWeddingClick={() => navigatePage('wedding')}
         onGuestClick={() => navigatePage('auth')}
@@ -166,18 +168,19 @@ export default function App() {
           <AnimatePresence mode="wait">
             <Routes location={location} key={location.pathname}>
               <Route path="/" element={<HomePage navigatePage={navigatePage} />} />
-              <Route path="/casamentos" element={<motion.div key="wedding" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.45 }}><WeddingModule onBack={onBackHome} /></motion.div>} />
-              <Route path="/reservas" element={<motion.div key="booking" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.45 }}><BookingPortal onBack={onBackHome} /></motion.div>} />
-              <Route path="/login" element={<motion.div key="auth" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.45 }}><AuthPortal onBack={onBackHome} /></motion.div>} />
-              <Route path="/hospede" element={<Guard guestOnly><motion.div key="guest" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.45 }}><GuestPortal onBack={onBackHome} onPlaceOrder={addOrder} onHKRequest={addHKRequest} frigobarConsumed={frigobarConsumed} onFrigobarChange={setFrigobarConsumed} /></motion.div></Guard>} />
-              <Route path="/equipe" element={<Guard teamOnly><motion.div key="operations" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.45 }}><OperationsPortal onBack={onBackHome} onNavigate={navigatePage} /></motion.div></Guard>} />
-              <Route path="/equipe/acessos" element={<Guard teamOnly adminOnly><motion.div key="access" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.45 }}><AccessPortal onBack={() => navigate('/equipe')} /></motion.div></Guard>} />
-              <Route path="/equipe/atendimento" element={<Guard teamOnly><motion.div key="attendant" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.45 }}><AttendantPortal onBack={() => navigate('/equipe')} orders={orders} onUpdateOrderStatus={updateOrderStatus} onUpdatePaymentStatus={updatePaymentStatus} hkRequests={hkRequests} onUpdateHKStatus={updateHKStatus} frigobarConsumed={frigobarConsumed} /></motion.div></Guard>} />
-              <Route path="/equipe/recepcao" element={<Guard teamOnly permissionAny={['bookings', 'guests']}><motion.div key="frontdesk" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.45 }}><FrontDeskPortal onBack={() => navigate('/equipe')} /></motion.div></Guard>} />
-              <Route path="/equipe/cozinha" element={<Guard teamOnly permission="kitchen"><motion.div key="kitchen" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.45 }}><KitchenPortal onBack={() => navigate('/equipe')} /></motion.div></Guard>} />
-              <Route path="/equipe/governanca" element={<Guard teamOnly permission="housekeeping"><motion.div key="housekeeping" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.45 }}><HousekeepingPortal onBack={() => navigate('/equipe')} /></motion.div></Guard>} />
-              <Route path="/equipe/rh" element={<Guard teamOnly permission="hr"><motion.div key="hr" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.45 }}><HRPortal onBack={() => navigate('/equipe')} /></motion.div></Guard>} />
-              <Route path="/equipe/financeiro" element={<Guard teamOnly permission="payments"><motion.div key="financial" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.45 }}><FinancialPortal onBack={() => navigate('/equipe')} /></motion.div></Guard>} />
+              <Route path="/casamentos" element={<motion.div key="wedding" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}><WeddingModule onBack={onBackHome} /></motion.div>} />
+              <Route path="/reservas" element={<motion.div key="booking" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}><BookingPortal onBack={onBackHome} /></motion.div>} />
+              <Route path="/login" element={<motion.div key="auth" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}><AuthPortal onBack={onBackHome} /></motion.div>} />
+              <Route path="/hospede" element={<Guard guestOnly><motion.div key="guest" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}><GuestPortal onBack={onBackHome} onPlaceOrder={addOrder} onHKRequest={addHKRequest} frigobarConsumed={frigobarConsumed} onFrigobarChange={setFrigobarConsumed} /></motion.div></Guard>} />
+              <Route path="/equipe" element={<Guard teamOnly><motion.div key="operations" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}><OperationsPortal onBack={onBackHome} onNavigate={navigatePage} /></motion.div></Guard>} />
+              <Route path="/equipe/acessos" element={<Guard teamOnly adminOnly><motion.div key="access" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}><AccessPortal onBack={() => navigate('/equipe')} /></motion.div></Guard>} />
+              <Route path="/equipe/atendimento" element={<Guard teamOnly permission="roomService"><motion.div key="attendant" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}><AttendantPortal onBack={() => navigate('/equipe')} orders={orders} onUpdateOrderStatus={updateOrderStatus} onUpdatePaymentStatus={updatePaymentStatus} hkRequests={hkRequests} onUpdateHKStatus={updateHKStatus} frigobarConsumed={frigobarConsumed} /></motion.div></Guard>} />
+              <Route path="/equipe/recepcao" element={<Guard teamOnly permissionAny={['bookings', 'guests']}><motion.div key="frontdesk" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}><FrontDeskPortal onBack={() => navigate('/equipe')} /></motion.div></Guard>} />
+              <Route path="/equipe/cozinha" element={<Guard teamOnly permission="kitchen"><motion.div key="kitchen" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}><KitchenPortal onBack={() => navigate('/equipe')} /></motion.div></Guard>} />
+              <Route path="/equipe/governanca" element={<Guard teamOnly permission="housekeeping"><motion.div key="housekeeping" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}><HousekeepingPortal onBack={() => navigate('/equipe')} /></motion.div></Guard>} />
+              <Route path="/equipe/rh" element={<Guard teamOnly permission="hr"><motion.div key="hr" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}><HRPortal onBack={() => navigate('/equipe')} /></motion.div></Guard>} />
+              <Route path="/equipe/financeiro" element={<Guard teamOnly permission="payments"><motion.div key="financial" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}><FinancialPortal onBack={() => navigate('/equipe')} /></motion.div></Guard>} />
+              <Route path="/equipe/garcom" element={<Guard teamOnly permission="kitchen"><motion.div key="garcom" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}><GarcomPortal onBack={() => navigate('/equipe')} /></motion.div></Guard>} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </AnimatePresence>

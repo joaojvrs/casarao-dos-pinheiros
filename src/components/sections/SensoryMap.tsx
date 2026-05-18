@@ -276,17 +276,20 @@ export const SensoryMap: React.FC = () => {
                     <Label pt={pt} hot={hot} />
 
                     {/* Outer breathing halo */}
-                    <motion.circle cx={pt.x} cy={pt.y} r={20}
-                      fill={C.gold}
-                      animate={{ r: [14, 26, 14], opacity: [0.18, 0.04, 0.18] }}
+                    <motion.g
+                      style={{ originX: `${pt.x}px`, originY: `${pt.y}px` }}
+                      animate={{ scale: [0.7, 1.3, 0.7], opacity: [0.18, 0.04, 0.18] }}
                       transition={{ duration: 4.2, delay: i * 0.72, repeat: Infinity, ease: 'easeInOut' }}
-                    />
+                    >
+                      <circle cx={pt.x} cy={pt.y} r={20} fill={C.gold} />
+                    </motion.g>
                     {/* Ring */}
-                    <motion.circle cx={pt.x} cy={pt.y} r={9}
-                      fill="none" stroke={C.gold} strokeWidth={0.85}
+                    <motion.g
                       animate={{ opacity: [0.7, 0.18, 0.7] }}
                       transition={{ duration: 4.2, delay: i * 0.72 + 0.6, repeat: Infinity }}
-                    />
+                    >
+                      <circle cx={pt.x} cy={pt.y} r={9} fill="none" stroke={C.gold} strokeWidth={0.85} />
+                    </motion.g>
                     {/* Core dot — hover target */}
                     <circle cx={pt.x} cy={pt.y} r={5.5}
                       fill={hot ? C.gold : C.bg}

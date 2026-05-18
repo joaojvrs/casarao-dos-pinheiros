@@ -5,6 +5,7 @@ export type RestaurantPaymentMethod = 'cash' | 'card' | 'pix' | 'room' | 'courte
 export interface RestaurantProduct {
   id: string;
   name: string;
+  description: string | null;
   sku: string | null;
   unit: string;
   cost_price: number;
@@ -12,7 +13,23 @@ export interface RestaurantProduct {
   stock_quantity: number;
   min_stock: number;
   active: boolean;
+  show_on_guest_menu: boolean;
+  image_url: string | null;
   restaurant_categories?: { name: string } | { name: string }[] | null;
+}
+
+export interface MenuProduct {
+  id: string;
+  name: string;
+  description: string | null;
+  sale_price: number;
+  image_url: string | null;
+  restaurant_categories?: { name: string } | null;
+}
+
+export interface GarconMenu {
+  products: RestaurantProduct[];
+  tabs: RestaurantTab[];
 }
 
 export interface RestaurantOrderItem {
@@ -27,6 +44,8 @@ export interface RestaurantOrderItem {
 
 export interface RestaurantOrder {
   id: string;
+  tab_id?: string;
+  created_by?: string | null;
   order_number: string;
   origin: string;
   status: RestaurantOrderStatus;
@@ -57,6 +76,7 @@ export interface RestaurantSale {
   discount: number;
   total: number;
   payment_method: RestaurantPaymentMethod;
+  sold_by: string | null;
   sold_at: string;
 }
 
@@ -75,6 +95,37 @@ export interface RestaurantCategory {
   active: boolean;
 }
 
+export interface RestaurantStockMovement {
+  id: string;
+  movement_type: 'in' | 'out' | 'adjustment' | 'waste';
+  quantity: number;
+  reason: string | null;
+  created_at: string;
+  reference_type: string | null;
+  restaurant_products?: { name: string; unit: string } | { name: string; unit: string }[] | null;
+}
+
+export interface RestaurantReceivable {
+  id: string;
+  description: string;
+  amount: number;
+  due_date: string;
+  status: 'open' | 'received' | 'cancelled';
+}
+
+export interface RestaurantPayable {
+  id: string;
+  description: string;
+  amount: number;
+  due_date: string;
+  status: 'open' | 'paid' | 'cancelled';
+}
+
+export interface RestaurantStaffProfile {
+  id: string;
+  name: string;
+}
+
 export interface RestaurantSummary {
   products: RestaurantProduct[];
   categories: RestaurantCategory[];
@@ -82,6 +133,10 @@ export interface RestaurantSummary {
   tabs: RestaurantTab[];
   sales: RestaurantSale[];
   cashSession: RestaurantCashSession | null;
+  stockMovements: RestaurantStockMovement[];
+  receivables: RestaurantReceivable[];
+  payables: RestaurantPayable[];
+  staff: RestaurantStaffProfile[];
   metrics: {
     activeOrders: number;
     openTabs: number;
@@ -104,4 +159,6 @@ export interface RestaurantProductInput {
   stockQuantity: number;
   minStock: number;
   active?: boolean;
+  showOnGuestMenu?: boolean;
+  imageUrl?: string | null;
 }
