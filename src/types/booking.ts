@@ -46,3 +46,41 @@ export interface CreateBookingResult {
   paymentMethod: 'pix' | 'credit_card';
   emailStatus: 'sent' | 'mocked' | 'failed';
 }
+
+export type GuestStayStatus =
+  | 'pending'
+  | 'confirmed'
+  | 'checked_in'
+  | 'checked_out'
+  | 'no_show'
+  | 'cancelled'
+  | 'completed';
+
+export interface GuestStay {
+  bookingId: string;
+  confirmationCode: string;
+  status: GuestStayStatus;
+  checkIn: string;
+  checkOut: string;
+  guestsCount: number;
+  nights: number;
+  total: number;
+  accommodation: {
+    id: string;
+    name: string;
+    image: string;
+  };
+  guest: {
+    name: string;
+    email: string;
+    phone: string;
+  };
+  room?: {
+    number: string;
+    status: string;
+    checkinReal: string | null;
+    checkoutReal: string | null;
+  } | null;
+  canOrder: boolean;
+  phase: 'upcoming' | 'active' | 'past';
+}

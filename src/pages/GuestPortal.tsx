@@ -3,15 +3,16 @@ import { motion, AnimatePresence } from 'motion/react';
 import QRCode from 'react-qr-code';
 import {
   ArrowLeft, Bath, BedDouble, CalendarDays, Check, ChevronRight, Clock,
-  CloudSun, Coffee, ConciergeBell, Copy, CreditCard, Flame, GlassWater,
-  Heart, Home, Lamp, Leaf, MessageCircle, Minus, Mountain,
+  CloudSun, Coffee, ConciergeBell, Copy, CreditCard, Download, Flame, GlassWater,
+  Heart, Home, Lamp, Leaf, MapPin, MessageCircle, Minus, Mountain,
   Music2, Package, Plus, QrCode, Refrigerator, Send, ShowerHead,
   Sparkles, ThermometerSun, UtensilsCrossed, Waves, Wifi, Wine, X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { getGuestMenu, placeGuestOrder } from '../services/restaurant';
-import type { MenuProduct } from '../types/restaurant';
+import { getGuestMenu, getGuestOrders, getGuestStay, placeGuestOrder } from '../services/restaurant';
+import type { GuestStay } from '../types/booking';
+import type { GuestOrderRecord, MenuProduct } from '../types/restaurant';
 import type { GuestOrder, HKRequest, PaymentMethod } from '../types/portal';
 
 interface GuestPortalProps {
@@ -94,18 +95,99 @@ const CHAT_RESPONSES: Record<string, string> = {
   'Sugestao de vinho': 'Para a noite fria, Pinot da serra. Acompanha a tabua da casa e conversa bem com lareira.',
 };
 
-function useCountdown() {
-  const checkout = useMemo(() => new Date('2026-05-18T12:00:00'), []);
-  const [remaining, setRemaining] = useState(() => checkout.getTime() - Date.now());
+function useCountdown(targetDate?: string) {
+  const target = useMemo(() => new Date(`${targetDate || new Date().toISOString().slice(0, 10)}T12:00:00`), [targetDate]);
+  const [remaining, setRemaining] = useState(() => Math.max(0, target.getTime() - Date.now()));
   useEffect(() => {
-    const id = window.setInterval(() => setRemaining(Math.max(0, checkout.getTime() - Date.now())), 30000);
+    setRemaining(Math.max(0, target.getTime() - Date.now()));
+    const id = window.setInterval(() => setRemaining(Math.max(0, target.getTime() - Date.now())), 30000);
     return () => window.clearInterval(id);
-  }, [checkout]);
+  }, [target]);
   return {
     days: Math.floor(remaining / 86400000),
     hours: Math.floor((remaining % 86400000) / 3600000),
     minutes: Math.floor((remaining % 3600000) / 60000),
   };
+}
+
+function formatDate(date: string) {
+  if (!date) return '--';
+  return new Date(`${date}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+}
+
+function statusLabel(status: GuestStay['status']) {
+  const labels: Record<GuestStay['status'], string> = {
+    pending: 'Pendente',
+    confirmed: 'Confirmada',
+    checked_in: 'Hospedagem ativa',
+    checked_out: 'Checkout realizado',
+    no_show: 'No-show',
+    cancelled: 'Cancelada',
+    completed: 'Concluida',
+  };
+  return labels[status] || status;
+}
+
+async function generateStayShareImage(stay: GuestStay, countdown: { days: number; hours: number; minutes: number }) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 1080;
+  canvas.height = 1350;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+
+  const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  gradient.addColorStop(0, '#16251d');
+  gradient.addColorStop(0.52, '#2f4e38');
+  gradient.addColorStop(1, '#f3eee5');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  try {
+    const image = new Image();
+    image.crossOrigin = 'anonymous';
+    image.src = stay.accommodation.image;
+    await new Promise((resolve, reject) => {
+      image.onload = resolve;
+      image.onerror = reject;
+    });
+    ctx.save();
+    ctx.globalAlpha = 0.72;
+    ctx.drawImage(image, 0, 0, canvas.width, 760);
+    ctx.restore();
+  } catch {
+    ctx.fillStyle = '#203327';
+    ctx.fillRect(0, 0, canvas.width, 760);
+  }
+
+  ctx.fillStyle = 'rgba(0,0,0,0.38)';
+  ctx.fillRect(0, 0, canvas.width, 760);
+  ctx.fillStyle = '#f8f3ea';
+  ctx.textAlign = 'center';
+  ctx.font = '700 34px Arial';
+  ctx.fillText('CASARAO VALE DO EDEN', 540, 110);
+  ctx.font = 'italic 86px Georgia';
+  ctx.fillText(stay.accommodation.name, 540, 500);
+  ctx.font = '400 32px Arial';
+  ctx.fillText(`${formatDate(stay.checkIn)} ate ${formatDate(stay.checkOut)}`, 540, 560);
+
+  ctx.fillStyle = '#f8f3ea';
+  ctx.beginPath();
+  ctx.roundRect(110, 840, 860, 330, 28);
+  ctx.fill();
+  ctx.fillStyle = '#1a0f0a';
+  ctx.font = '700 30px Arial';
+  ctx.fillText('Faltam para o check-in', 540, 930);
+  ctx.font = 'italic 112px Georgia';
+  ctx.fillText(`${countdown.days} dias`, 540, 1045);
+  ctx.font = '400 30px Arial';
+  ctx.fillText(`${countdown.hours} horas e ${countdown.minutes} minutos`, 540, 1100);
+  ctx.font = '700 28px Arial';
+  ctx.fillText(`#${stay.confirmationCode}`, 540, 1250);
+
+  const link = document.createElement('a');
+  link.href = canvas.toDataURL('image/png');
+  link.download = `hospedagem-${stay.confirmationCode}.png`;
+  link.click();
 }
 
 function uid() { return Math.random().toString(36).slice(2, 10); }
@@ -126,14 +208,22 @@ export const GuestPortal: React.FC<GuestPortalProps> = ({
   const [activeTab, setActiveTab] = useState<Tab>('home');
   const [cart, setCart] = useState<Cart>({});
   const [paymentModal, setPaymentModal] = useState<'select' | 'pix' | 'room' | null>(null);
-  const [orderConfirmed, setOrderConfirmed] = useState(false);
+  const [lastOrderResult, setLastOrderResult] = useState<{ orderId: string; orderNumber: string } | null>(null);
   const [orderPlacing, setOrderPlacing] = useState(false);
   const [hkTime, setHkTime] = useState('15:30');
   const [hkServices, setHkServices] = useState<string[]>(['Toalhas aquecidas']);
   const [hkConfirmed, setHkConfirmed] = useState('');
   const [menuItems, setMenuItems] = useState<MenuProduct[]>([]);
   const [menuLoading, setMenuLoading] = useState(true);
-  const countdown = useCountdown();
+  const [stay, setStay] = useState<GuestStay | null>(null);
+  const [stayLoading, setStayLoading] = useState(true);
+  const [stayError, setStayError] = useState('');
+  const [orderError, setOrderError] = useState('');
+  const [deliveryLocation, setDeliveryLocation] = useState('');
+  const [orderNotes, setOrderNotes] = useState('');
+  const [guestOrders, setGuestOrders] = useState<GuestOrderRecord[]>([]);
+  const [roomServiceSubTab, setRoomServiceSubTab] = useState<'order' | 'myorders'>('order');
+  const countdown = useCountdown(stay?.phase === 'active' ? stay.checkOut : stay?.checkIn);
 
   const mood = useMemo(() => {
     const h = new Date().getHours();
@@ -143,11 +233,43 @@ export const GuestPortal: React.FC<GuestPortalProps> = ({
   }, []);
 
   useEffect(() => {
+    getGuestStay()
+      .then(data => setStay(data))
+      .catch(error => setStayError(error instanceof Error ? error.message : 'Nao foi possivel carregar sua hospedagem.'))
+      .finally(() => setStayLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (!stay?.canOrder) {
+      setMenuItems([]);
+      setMenuLoading(false);
+      return;
+    }
+    setMenuLoading(true);
     getGuestMenu()
       .then(items => setMenuItems(items))
       .catch(() => setMenuItems([]))
       .finally(() => setMenuLoading(false));
-  }, []);
+  }, [stay?.canOrder]);
+
+  useEffect(() => {
+    if (stay && !deliveryLocation) {
+      setDeliveryLocation(stay.accommodation.name);
+    }
+  }, [stay]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!stay?.canOrder || activeTab !== 'roomservice') return;
+    let mounted = true;
+    const fetch = () => {
+      getGuestOrders()
+        .then(orders => { if (mounted) setGuestOrders(orders); })
+        .catch(() => {});
+    };
+    fetch();
+    const id = window.setInterval(fetch, 30000);
+    return () => { mounted = false; window.clearInterval(id); };
+  }, [stay?.canOrder, activeTab]);
 
   const cartTotal = useMemo(
     () => menuItems.reduce((sum, item) => sum + (cart[item.id] || 0) * item.sale_price, 0),
@@ -162,17 +284,31 @@ export const GuestPortal: React.FC<GuestPortalProps> = ({
 
   const confirmPayment = async (method: PaymentMethod) => {
     const cartedItems = menuItems.filter(m => (cart[m.id] || 0) > 0);
+    if (!stay?.canOrder) {
+      setOrderError('Pedidos ficam disponiveis apenas durante a hospedagem ativa.');
+      setPaymentModal(null);
+      return;
+    }
     setOrderPlacing(true);
+    setOrderError('');
+    const effectiveLocation = deliveryLocation || stay.accommodation.name;
+    let orderResult: { orderId: string; orderNumber: string };
     try {
-      await placeGuestOrder({
+      orderResult = await placeGuestOrder({
         items: cartedItems.map(m => ({ productId: m.id, quantity: cart[m.id] })),
-        roomName: 'Chale Pinheiros',
+        roomName: effectiveLocation,
+        bookingId: stay.bookingId,
+        deliveryLocation: effectiveLocation,
+        notes: orderNotes.trim() || undefined,
       });
-    } catch {
-      // persist to DB best-effort; still confirm to guest
+    } catch (error) {
+      setOrderError(error instanceof Error ? error.message : 'Nao foi possivel registrar o pedido.');
+      setOrderPlacing(false);
+      setPaymentModal(null);
+      return;
     }
     const order: GuestOrder = {
-      id: uid(), room: 'Chalé Pinheiros', guestName,
+      id: uid(), room: effectiveLocation, guestName,
       items: cartedItems.map(m => ({ name: m.name, qty: cart[m.id], price: m.sale_price })),
       total: cartTotal, payment: method,
       paymentStatus: method === 'pix' ? 'pending' : 'charged',
@@ -180,13 +316,19 @@ export const GuestPortal: React.FC<GuestPortalProps> = ({
     };
     onPlaceOrder(order);
     setCart({});
-    setOrderConfirmed(true);
+    setOrderNotes('');
+    setLastOrderResult(orderResult);
+    setRoomServiceSubTab('myorders');
     setPaymentModal(null);
     setOrderPlacing(false);
-    setTimeout(() => setOrderConfirmed(false), 4000);
+    getGuestOrders().then(orders => setGuestOrders(orders)).catch(() => {});
   };
 
   const confirmHK = () => {
+    if (!stay?.canOrder) {
+      setHkConfirmed('Solicitacoes ficam disponiveis apenas durante a hospedagem ativa.');
+      return;
+    }
     const req: HKRequest = {
       id: uid(), time: hkTime, services: hkServices,
       status: 'pending', requestedAt: new Date().toISOString(),
@@ -202,6 +344,20 @@ export const GuestPortal: React.FC<GuestPortalProps> = ({
       [name]: Math.min(item.standardQty, Math.max(0, (prev[name] || 0) + delta)),
     }));
   };
+
+  if (stayLoading || !stay) {
+    return (
+      <div className="min-h-screen bg-[#f3eee5] px-4 py-5 text-[#1a0f0a]">
+        <button onClick={onBack} className="mb-8 flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white">
+          <ArrowLeft size={16} />
+        </button>
+        <GuestStateCard
+          title={stayLoading ? 'Carregando sua hospedagem' : 'Nenhuma hospedagem encontrada'}
+          text={stayLoading ? 'Estamos buscando os dados vinculados a sua conta.' : stayError || 'Quando uma reserva paga estiver vinculada ao seu e-mail, ela aparecera aqui.'}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#f3eee5] text-[#1a0f0a] pb-24">
@@ -230,13 +386,23 @@ export const GuestPortal: React.FC<GuestPortalProps> = ({
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.22 }}
           >
-            {activeTab === 'home' && <HomeTab mood={mood} countdown={countdown} guestName={firstName} />}
+            {activeTab === 'home' && <HomeTab mood={mood} countdown={countdown} guestName={firstName} stay={stay} onShare={() => generateStayShareImage(stay, countdown)} />}
             {activeTab === 'roomservice' && (
               <RoomServiceTab
                 menu={menuItems} menuLoading={menuLoading}
                 cart={cart} changeCart={changeCart} total={cartTotal} count={cartCount}
                 onCheckout={() => setPaymentModal('select')}
-                confirmed={orderConfirmed}
+                lastOrder={lastOrderResult}
+                canOrder={stay.canOrder}
+                error={orderError}
+                deliveryLocation={deliveryLocation || stay.accommodation.name}
+                setDeliveryLocation={setDeliveryLocation}
+                deliveryOptions={[stay.accommodation.name, 'Piscina', 'Deck', 'Área de Lazer', 'Restaurante']}
+                orderNotes={orderNotes}
+                setOrderNotes={setOrderNotes}
+                guestOrders={guestOrders}
+                subTab={roomServiceSubTab}
+                setSubTab={setRoomServiceSubTab}
               />
             )}
             {activeTab === 'frigobar' && (
@@ -295,10 +461,12 @@ export const GuestPortal: React.FC<GuestPortalProps> = ({
 
 // ─── Home Tab ────────────────────────────────────────────────────────────────
 
-function HomeTab({ mood, countdown, guestName }: {
+function HomeTab({ mood, countdown, guestName, stay, onShare }: {
   mood: { period: string; weather: string; note: string };
   countdown: { days: number; hours: number; minutes: number };
   guestName: string;
+  stay: GuestStay;
+  onShare: () => void;
 }) {
   return (
     <div className="space-y-5">
@@ -320,6 +488,27 @@ function HomeTab({ mood, countdown, guestName }: {
           <CountBox label="horas" value={countdown.hours} />
           <CountBox label="min" value={countdown.minutes} />
         </div>
+      </div>
+
+      <div className="rounded-2xl bg-white p-4 shadow-sm">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <span className="text-[9px] font-bold uppercase tracking-[0.32em] text-[#3a6b4a]">Sua hospedagem</span>
+            <h2 className="mt-1 font-serif text-2xl italic">{stay.accommodation.name}</h2>
+            <p className="mt-1 text-xs text-[#1a0f0a]/50">{statusLabel(stay.status)} · {stay.confirmationCode}</p>
+          </div>
+          <button onClick={onShare} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#1a0f0a] text-white transition hover:bg-[#c3a37a] hover:text-[#1a0f0a]" title="Gerar imagem">
+            <Download size={17} />
+          </button>
+        </div>
+        <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+          <CountBox label="dias" value={countdown.days} />
+          <CountBox label="noites" value={stay.nights} />
+          <CountBox label="hospedes" value={stay.guestsCount} />
+        </div>
+        <p className="mt-3 text-xs leading-relaxed text-[#1a0f0a]/45">
+          {stay.canOrder ? 'Pedidos, concierge e solicitacoes estao liberados durante sua estadia.' : 'Pedidos e solicitacoes serao liberados apos o check-in.'}
+        </p>
       </div>
 
       {/* Today highlights */}
@@ -363,12 +552,20 @@ function HomeTab({ mood, countdown, guestName }: {
 
 // ─── Room Service Tab ─────────────────────────────────────────────────────────
 
-function RoomServiceTab({ menu, menuLoading, cart, changeCart, total, count, onCheckout, confirmed }: {
+function RoomServiceTab({ menu, menuLoading, cart, changeCart, total, count, onCheckout, lastOrder, canOrder, error, deliveryLocation, setDeliveryLocation, deliveryOptions, orderNotes, setOrderNotes, guestOrders, subTab, setSubTab }: {
   menu: MenuProduct[]; menuLoading: boolean;
   cart: Cart; changeCart: (id: string, d: number) => void;
-  total: number; count: number; onCheckout: () => void; confirmed: boolean;
+  total: number; count: number; onCheckout: () => void;
+  lastOrder: { orderId: string; orderNumber: string } | null;
+  canOrder: boolean; error: string;
+  deliveryLocation: string; setDeliveryLocation: (v: string) => void;
+  deliveryOptions: string[];
+  orderNotes: string; setOrderNotes: (v: string) => void;
+  guestOrders: GuestOrderRecord[];
+  subTab: 'order' | 'myorders'; setSubTab: (v: 'order' | 'myorders') => void;
 }) {
   const [categoryFilter, setCategoryFilter] = useState('');
+  const activeOrders = guestOrders.filter(o => ['new', 'preparing', 'ready'].includes(o.status));
 
   const categories = useMemo(
     () => [...new Set(menu.map(m => {
@@ -400,130 +597,311 @@ function RoomServiceTab({ menu, menuLoading, cart, changeCart, total, count, onC
       <div>
         <p className="text-[9px] font-bold uppercase tracking-[0.4em] text-[#c3a37a]">Room Service</p>
         <h2 className="font-serif text-3xl italic leading-tight mt-0.5">Do café ao vinho,<br />no seu tempo.</h2>
-        <p className="mt-2 text-xs text-[#1a0f0a]/45">Entrega no chalé em até 30 minutos.</p>
       </div>
 
-      {/* Confirmation */}
-      <AnimatePresence>
-        {confirmed && (
-          <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-            className="flex items-center gap-3 rounded-xl bg-[#3a6b4a]/12 border border-[#3a6b4a]/25 p-4">
-            <Check size={18} className="text-[#3a6b4a] shrink-0" />
-            <p className="text-sm text-[#2e573b] font-medium">Pedido confirmado! Em caminho ao seu chalé.</p>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Sub-tab switcher */}
+      <div className="flex gap-1.5 rounded-2xl bg-white p-1.5 shadow-sm">
+        <button
+          onClick={() => setSubTab('order')}
+          className={`flex-1 flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-xs font-bold uppercase tracking-wide transition ${subTab === 'order' ? 'bg-[#1a0f0a] text-white shadow-sm' : 'text-[#1a0f0a]/45 hover:text-[#1a0f0a]/70'}`}
+        >
+          Novo Pedido
+          {count > 0 && subTab !== 'order' && (
+            <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-[#c3a37a] text-[8px] font-bold text-[#1a0f0a]">{count}</span>
+          )}
+        </button>
+        <button
+          onClick={() => setSubTab('myorders')}
+          className={`flex-1 flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-xs font-bold uppercase tracking-wide transition ${subTab === 'myorders' ? 'bg-[#1a0f0a] text-white shadow-sm' : 'text-[#1a0f0a]/45 hover:text-[#1a0f0a]/70'}`}
+        >
+          Meus Pedidos
+          {activeOrders.length > 0 && (
+            <span className={`inline-flex h-4 w-4 items-center justify-center rounded-full text-[8px] font-bold ${subTab === 'myorders' ? 'bg-[#c3a37a] text-[#1a0f0a]' : 'bg-[#c3a37a]/80 text-[#1a0f0a]'}`}>{activeOrders.length}</span>
+          )}
+        </button>
+      </div>
 
-      {/* Category chips */}
-      {!menuLoading && categories.length > 1 && (
-        <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
-          <button onClick={() => setCategoryFilter('')}
-            className={`shrink-0 rounded-full px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide transition ${!categoryFilter ? 'bg-[#1a0f0a] text-white' : 'bg-white border border-[#1a0f0a]/12 text-[#1a0f0a]/55'}`}>
-            Tudo
-          </button>
-          {categories.map(cat => (
-            <button key={cat} onClick={() => setCategoryFilter(cat === categoryFilter ? '' : cat)}
-              className={`shrink-0 rounded-full px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide transition ${categoryFilter === cat ? 'bg-[#c3a37a] text-[#1a0f0a]' : 'bg-white border border-[#1a0f0a]/12 text-[#1a0f0a]/55'}`}>
-              {cat}
-            </button>
-          ))}
-        </div>
-      )}
+      {/* ── Novo Pedido ── */}
+      {subTab === 'order' && (
+        <>
+          {!canOrder && (
+            <div className="rounded-2xl border border-[#c3a37a]/30 bg-white p-5">
+              <p className="text-sm font-semibold text-[#1a0f0a]">Pedidos ainda não liberados.</p>
+              <p className="mt-1 text-xs leading-relaxed text-[#1a0f0a]/50">O cardápio fica disponível após o check-in e fecha automaticamente no checkout.</p>
+            </div>
+          )}
 
-      {/* Skeleton while loading */}
-      {menuLoading && (
-        <div className="space-y-3">
-          {Array.from({ length: 4 }, (_, i) => (
-            <div key={i} className="flex gap-4 rounded-2xl bg-white p-4 shadow-sm animate-pulse">
-              <div className="h-20 w-20 shrink-0 rounded-xl bg-black/8" />
-              <div className="flex-1 space-y-2.5">
-                <div className="h-4 w-2/3 rounded bg-black/8" />
-                <div className="h-3 w-full rounded bg-black/8" />
-                <div className="h-3 w-1/3 rounded bg-black/8" />
+          {error && (
+            <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}</div>
+          )}
+
+          {/* Delivery location */}
+          {canOrder && (
+            <div>
+              <p className="text-[9px] font-bold uppercase tracking-[0.32em] text-[#1a0f0a]/35 mb-2">Local de entrega</p>
+              <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+                {deliveryOptions.map(loc => (
+                  <button
+                    key={loc}
+                    onClick={() => setDeliveryLocation(loc)}
+                    className={`shrink-0 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide transition ${
+                      deliveryLocation === loc
+                        ? 'bg-[#1a0f0a] text-white'
+                        : 'bg-white border border-[#1a0f0a]/12 text-[#1a0f0a]/55 hover:border-[#1a0f0a]/30'
+                    }`}
+                  >
+                    <MapPin size={9} className={deliveryLocation === loc ? 'text-[#c3a37a]' : ''} />
+                    {loc}
+                  </button>
+                ))}
               </div>
             </div>
-          ))}
-        </div>
-      )}
+          )}
 
-      {/* Menu grouped by category */}
-      {!menuLoading && (
-        <div className="space-y-6">
-          {Object.entries(grouped).map(([cat, items]) => (
-            <div key={cat}>
-              <div className="flex items-center gap-3 mb-3">
-                <p className="font-serif text-xl italic text-[#1a0f0a]">{cat}</p>
-                <div className="flex-1 h-px bg-[#1a0f0a]/8" />
-              </div>
-              <div className="space-y-3">
-                {items.map(item => {
-                  const qty = cart[item.id] || 0;
-                  return (
-                    <div key={item.id} className="flex gap-4 rounded-2xl bg-white p-4 shadow-sm transition hover:shadow-md">
-                      {/* Photo */}
-                      <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl">
-                        {item.image_url ? (
-                          <img src={item.image_url} alt={item.name} className="h-full w-full object-cover" />
-                        ) : (
-                          <div className="flex h-full w-full items-center justify-center bg-[#f4efe6]">
-                            <UtensilsCrossed size={22} className="text-[#c3a37a]" />
-                          </div>
-                        )}
-                      </div>
-                      {/* Info */}
-                      <div className="flex flex-1 flex-col justify-between min-w-0">
-                        <div>
-                          <h3 className="text-sm font-semibold leading-tight">{item.name}</h3>
-                          {item.description && (
-                            <p className="mt-0.5 text-xs text-[#1a0f0a]/45 line-clamp-2 leading-relaxed">{item.description}</p>
-                          )}
-                        </div>
-                        <div className="flex items-center justify-between mt-2">
-                          <span className="font-bold text-[#1a0f0a]">{BRL_CENTS(item.sale_price)}</span>
-                          <div className="flex items-center gap-2">
-                            {qty > 0 && (
-                              <>
-                                <button onClick={() => changeCart(item.id, -1)}
-                                  className="flex h-7 w-7 items-center justify-center rounded-full border border-[#1a0f0a]/15 text-[#1a0f0a]/55 hover:border-[#1a0f0a]/40 transition">
-                                  <Minus size={11} />
-                                </button>
-                                <span className="w-5 text-center text-sm font-bold">{qty}</span>
-                              </>
+          {/* Category chips */}
+          {!menuLoading && categories.length > 1 && (
+            <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+              <button onClick={() => setCategoryFilter('')}
+                className={`shrink-0 rounded-full px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide transition ${!categoryFilter ? 'bg-[#1a0f0a] text-white' : 'bg-white border border-[#1a0f0a]/12 text-[#1a0f0a]/55'}`}>
+                Tudo
+              </button>
+              {categories.map(cat => (
+                <button key={cat} onClick={() => setCategoryFilter(cat === categoryFilter ? '' : cat)}
+                  className={`shrink-0 rounded-full px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide transition ${categoryFilter === cat ? 'bg-[#c3a37a] text-[#1a0f0a]' : 'bg-white border border-[#1a0f0a]/12 text-[#1a0f0a]/55'}`}>
+                  {cat}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Skeleton while loading */}
+          {menuLoading && (
+            <div className="space-y-3">
+              {Array.from({ length: 4 }, (_, i) => (
+                <div key={i} className="flex gap-4 rounded-2xl bg-white p-4 shadow-sm animate-pulse">
+                  <div className="h-20 w-20 shrink-0 rounded-xl bg-black/8" />
+                  <div className="flex-1 space-y-2.5">
+                    <div className="h-4 w-2/3 rounded bg-black/8" />
+                    <div className="h-3 w-full rounded bg-black/8" />
+                    <div className="h-3 w-1/3 rounded bg-black/8" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Menu grouped by category */}
+          {!menuLoading && (
+            <div className="space-y-7">
+              {Object.entries(grouped).map(([cat, items]) => (
+                <div key={cat}>
+                  <div className="flex items-center gap-3 mb-3">
+                    <p className="font-serif text-xl italic text-[#1a0f0a]">{cat}</p>
+                    <div className="flex-1 h-px bg-[#1a0f0a]/8" />
+                    <span className="text-[9px] font-bold uppercase tracking-widest text-[#1a0f0a]/25">{items.length}</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2.5">
+                    {items.map(item => {
+                      const qty = cart[item.id] || 0;
+                      return (
+                        <div key={item.id} className={`flex flex-col rounded-2xl bg-white shadow-sm overflow-hidden transition ${qty > 0 ? 'ring-1 ring-[#c3a37a]/50' : ''}`}>
+                          <div className="relative aspect-square overflow-hidden">
+                            {item.image_url ? (
+                              <img src={item.image_url} alt={item.name} className="h-full w-full object-cover" />
+                            ) : (
+                              <div className="flex h-full w-full items-center justify-center bg-[#f4efe6]">
+                                <UtensilsCrossed size={16} className="text-[#c3a37a]/60" />
+                              </div>
                             )}
-                            <button onClick={() => changeCart(item.id, 1)}
-                              className="flex h-7 w-7 items-center justify-center rounded-full bg-[#1a0f0a] text-white hover:bg-[#c3a37a] hover:text-[#1a0f0a] transition">
-                              <Plus size={11} />
-                            </button>
+                            {qty > 0 && (
+                              <span className="absolute top-1.5 right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-[#c3a37a] text-[9px] font-bold text-[#1a0f0a] shadow">
+                                {qty}
+                              </span>
+                            )}
+                          </div>
+                          <div className="p-2 flex flex-col flex-1">
+                            <p className="text-[11px] font-semibold leading-snug line-clamp-2 flex-1 text-[#1a0f0a]">{item.name}</p>
+                            <div className="mt-1.5 flex items-center justify-between gap-1">
+                              <span className="text-[10px] font-bold text-[#1a0f0a]">{BRL_CENTS(item.sale_price)}</span>
+                              <div className="flex items-center gap-0.5">
+                                {qty > 0 && (
+                                  <button
+                                    onClick={() => changeCart(item.id, -1)}
+                                    className="flex h-6 w-6 items-center justify-center rounded-full border border-[#1a0f0a]/15 text-[#1a0f0a]/50 active:bg-[#1a0f0a]/5 transition"
+                                  >
+                                    <Minus size={9} />
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => changeCart(item.id, 1)}
+                                  className="flex h-6 w-6 items-center justify-center rounded-full bg-[#1a0f0a] text-white active:bg-[#c3a37a] active:text-[#1a0f0a] transition"
+                                >
+                                  <Plus size={9} />
+                                </button>
+                              </div>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </div>
-                  );
-                })}
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+              {menu.length === 0 && !menuLoading && (
+                <div className="rounded-2xl border border-dashed border-[#1a0f0a]/12 bg-white p-8 text-center">
+                  <UtensilsCrossed size={28} className="mx-auto mb-3 text-[#c3a37a]/50" />
+                  <p className="text-sm text-[#1a0f0a]/45">Cardápio sendo preparado. Volte em breve.</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Cart bar with notes */}
+          {count > 0 && (
+            <div className="sticky bottom-24 space-y-2">
+              <div className="rounded-2xl bg-white border border-[#1a0f0a]/8 px-4 py-3 shadow-sm">
+                <input
+                  value={orderNotes}
+                  onChange={e => setOrderNotes(e.target.value)}
+                  placeholder="Observação opcional (sem açúcar, gelado, etc.)"
+                  className="w-full text-sm bg-transparent outline-none text-[#1a0f0a] placeholder:text-[#1a0f0a]/30"
+                />
+              </div>
+              <div className="rounded-2xl bg-[#1a0f0a] p-4 shadow-xl">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-white/55">{count} {count === 1 ? 'item' : 'itens'}</span>
+                    <span className="flex items-center gap-1 text-[10px] text-[#c3a37a]/60">
+                      <MapPin size={9} />{deliveryLocation}
+                    </span>
+                  </div>
+                  <span className="text-lg font-bold text-[#c3a37a]">{BRL_CENTS(total)}</span>
+                </div>
+                <button onClick={onCheckout}
+                  className="w-full rounded-full bg-[#c3a37a] py-3.5 text-xs font-bold uppercase tracking-[0.2em] text-[#1a0f0a] hover:bg-amber-200 transition">
+                  Confirmar pedido
+                </button>
               </div>
             </div>
-          ))}
-          {menu.length === 0 && !menuLoading && (
-            <div className="rounded-2xl border border-dashed border-[#1a0f0a]/12 bg-white p-8 text-center">
-              <UtensilsCrossed size={28} className="mx-auto mb-3 text-[#c3a37a]/50" />
-              <p className="text-sm text-[#1a0f0a]/45">Cardápio sendo preparado. Volte em breve.</p>
+          )}
+        </>
+      )}
+
+      {/* ── Meus Pedidos ── */}
+      {subTab === 'myorders' && (
+        <div className="space-y-4">
+          {lastOrder && (
+            <motion.div
+              key={lastOrder.orderId}
+              initial={{ opacity: 0, scale: 0.96, y: -8 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              transition={{ type: 'spring', stiffness: 320, damping: 28 }}
+              className="rounded-2xl bg-[#3a6b4a] p-5 text-white shadow-lg"
+            >
+              <div className="flex items-center gap-3 mb-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/20">
+                  <Check size={20} strokeWidth={2.5} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-base">Pedido confirmado!</p>
+                  <p className="text-[11px] text-white/65 mt-0.5 font-mono">{lastOrder.orderNumber}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-4 text-sm text-white/80">
+                <span className="flex items-center gap-1.5"><MapPin size={13} className="text-white/55" />{deliveryLocation}</span>
+                <span className="flex items-center gap-1.5"><Clock size={13} className="text-white/55" />~20–30 min</span>
+              </div>
+              <p className="mt-2.5 text-xs text-white/50">Acompanhe o status abaixo enquanto preparamos seu pedido.</p>
+            </motion.div>
+          )}
+
+          {guestOrders.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-[#1a0f0a]/12 bg-white p-10 text-center space-y-3">
+              <UtensilsCrossed size={28} className="mx-auto text-[#c3a37a]/50" />
+              <p className="text-sm font-semibold text-[#1a0f0a]/55">Nenhum pedido ainda.</p>
+              <p className="text-xs text-[#1a0f0a]/35">Faça seu primeiro pedido pelo cardápio.</p>
+              <button onClick={() => setSubTab('order')}
+                className="mt-1 rounded-full bg-[#1a0f0a] px-5 py-2.5 text-xs font-bold uppercase tracking-wide text-white hover:bg-[#c3a37a] hover:text-[#1a0f0a] transition">
+                Ver cardápio
+              </button>
             </div>
+          ) : (
+            <MyOrdersSection orders={guestOrders} />
           )}
         </div>
       )}
+    </div>
+  );
+}
 
-      {/* Sticky cart bar */}
-      {count > 0 && (
-        <div className="sticky bottom-24 rounded-2xl bg-[#1a0f0a] p-4 shadow-xl">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-sm text-white/55">{count} {count === 1 ? 'item' : 'itens'}</span>
-            <span className="text-lg font-bold text-[#c3a37a]">{BRL_CENTS(total)}</span>
-          </div>
-          <button onClick={onCheckout}
-            className="w-full rounded-full bg-[#c3a37a] py-3.5 text-xs font-bold uppercase tracking-[0.2em] text-[#1a0f0a] hover:bg-amber-200 transition">
-            Confirmar pedido
+// ─── My Orders Section ────────────────────────────────────────────────────────
+
+const ORDER_STATUS_CFG: Record<string, { label: string; badge: string; dot: string; pulse: boolean }> = {
+  new: { label: 'Recebido', badge: 'bg-amber-50 text-amber-700 border-amber-200', dot: 'bg-amber-400', pulse: true },
+  preparing: { label: 'Em preparo', badge: 'bg-blue-50 text-blue-700 border-blue-200', dot: 'bg-blue-500', pulse: true },
+  ready: { label: 'Pronto!', badge: 'bg-[#3a6b4a]/12 text-[#3a6b4a] border-[#3a6b4a]/30', dot: 'bg-[#3a6b4a]', pulse: false },
+  delivered: { label: 'Entregue', badge: 'bg-gray-50 text-gray-500 border-gray-200', dot: 'bg-gray-300', pulse: false },
+  cancelled: { label: 'Cancelado', badge: 'bg-red-50 text-red-600 border-red-200', dot: 'bg-red-400', pulse: false },
+};
+
+function MyOrdersSection({ orders }: { orders: GuestOrderRecord[] }) {
+  const [expanded, setExpanded] = useState(true);
+  const active = orders.filter(o => ['new', 'preparing', 'ready'].includes(o.status));
+  const done = orders.filter(o => ['delivered', 'cancelled'].includes(o.status));
+  const shown = expanded ? orders.slice(0, 6) : active.slice(0, 3);
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-3">
+        <p className="font-serif text-xl italic text-[#1a0f0a]">Meus pedidos</p>
+        <div className="flex-1 h-px bg-[#1a0f0a]/8" />
+        {active.length > 0 && (
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#c3a37a] text-[9px] font-bold text-[#1a0f0a]">
+            {active.length}
+          </span>
+        )}
+        {(done.length > 0 || orders.length > 3) && (
+          <button onClick={() => setExpanded(v => !v)} className="text-[10px] text-[#1a0f0a]/35 uppercase tracking-widest hover:text-[#1a0f0a]/60 transition">
+            {expanded ? 'Recolher' : 'Ver todos'}
           </button>
+        )}
+      </div>
+      <div className="space-y-2">
+        {shown.map(order => <OrderTrackCard key={order.id} order={order} />)}
+      </div>
+      {!expanded && done.length > 0 && (
+        <button onClick={() => setExpanded(true)} className="text-xs text-[#1a0f0a]/40 pl-1 hover:text-[#1a0f0a]/60 transition">
+          + {done.length} pedido{done.length > 1 ? 's' : ''} concluído{done.length > 1 ? 's' : ''}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function OrderTrackCard({ order }: { order: GuestOrderRecord }) {
+  const cfg = ORDER_STATUS_CFG[order.status] ?? ORDER_STATUS_CFG.new;
+  const isActive = ['new', 'preparing', 'ready'].includes(order.status);
+  const itemsSummary = order.restaurant_order_items.map(i => `${i.quantity}× ${i.name}`).join(', ');
+  const time = new Date(order.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+  return (
+    <div className={`rounded-xl border p-3.5 transition ${isActive ? 'border-[#c3a37a]/25 bg-white shadow-sm' : 'border-[#1a0f0a]/6 bg-white/60'}`}>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${cfg.dot}${cfg.pulse ? ' animate-pulse' : ''}`} />
+          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${cfg.badge}`}>{cfg.label}</span>
+          <span className="text-[10px] text-[#1a0f0a]/30">{time}</span>
         </div>
+        <span className="text-xs font-bold text-[#1a0f0a] shrink-0">{BRL_CENTS(order.total)}</span>
+      </div>
+      {itemsSummary && (
+        <p className="mt-1.5 text-xs text-[#1a0f0a]/50 line-clamp-1">{itemsSummary}</p>
+      )}
+      {order.notes && (
+        <p className="mt-0.5 flex items-center gap-1 text-[10px] text-[#1a0f0a]/35">
+          <MapPin size={9} className="shrink-0" />
+          <span className="truncate">{order.notes}</span>
+        </p>
       )}
     </div>
   );
@@ -885,5 +1263,17 @@ function Pill({ icon, label }: { icon: React.ReactNode; label: string }) {
 function Tag({ label }: { label: string }) {
   return (
     <span className="rounded-full bg-[#f4efe6] px-3 py-1 text-[9px] uppercase tracking-widest text-[#1a0f0a]/55">{label}</span>
+  );
+}
+
+function GuestStateCard({ title, text }: { title: string; text: string }) {
+  return (
+    <section className="mx-auto max-w-md rounded-2xl border border-black/8 bg-white p-6 text-center shadow-sm">
+      <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-[#c3a37a]/15 text-[#8c6b42]">
+        <BedDouble size={20} />
+      </div>
+      <h1 className="font-serif text-3xl italic text-[#1a0f0a]">{title}</h1>
+      <p className="mt-3 text-sm leading-relaxed text-[#1a0f0a]/55">{text}</p>
+    </section>
   );
 }

@@ -1,6 +1,8 @@
 import { supabase } from '../lib/supabase';
+import type { GuestStay } from '../types/booking';
 import type {
   GarconMenu,
+  GuestOrderRecord,
   MenuProduct,
   RestaurantOrderStatus,
   RestaurantPaymentMethod,
@@ -20,7 +22,7 @@ type RestaurantAction =
   | 'close_cash'
   | 'adjust_stock';
 
-type MenuAction = 'guest_menu' | 'place_guest_order';
+type MenuAction = 'guest_menu' | 'guest_stay' | 'place_guest_order' | 'guest_orders';
 
 interface FunctionResponse<T> {
   data: T;
@@ -66,12 +68,22 @@ export function getGuestMenu() {
   return invokeMenu<MenuProduct[]>('guest_menu');
 }
 
+export function getGuestStay() {
+  return invokeMenu<GuestStay | null>('guest_stay');
+}
+
 export function placeGuestOrder(input: {
   items: Array<{ productId: string; quantity: number; notes?: string }>;
   notes?: string;
   roomName?: string;
+  bookingId?: string;
+  deliveryLocation?: string;
 }) {
   return invokeMenu<{ orderId: string; orderNumber: string }>('place_guest_order', input as unknown as Record<string, unknown>);
+}
+
+export function getGuestOrders() {
+  return invokeMenu<GuestOrderRecord[]>('guest_orders');
 }
 
 export function getGarconMenu() {

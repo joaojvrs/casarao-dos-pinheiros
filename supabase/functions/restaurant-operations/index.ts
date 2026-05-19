@@ -140,12 +140,13 @@ async function summary(supabase: ReturnType<typeof createClient>) {
     supabase.from('restaurant_stock_movements').select('id, movement_type, quantity, reason, created_at, reference_type, restaurant_products(name, unit)').gte('created_at', todayStart.toISOString()).order('created_at', { ascending: false }).limit(100),
     supabase.from('restaurant_receivables').select('id, description, amount, due_date, status').eq('status', 'open').order('due_date'),
     supabase.from('restaurant_payables').select('id, description, amount, due_date, status').eq('status', 'open').order('due_date'),
-    supabase.from('profiles').select('id, name').neq('role', 'visitor').order('name'),
+    supabase.from('profiles').select('id, name').order('name'),
   ]);
 
-  for (const result of [productsResult, ordersResult, tabsResult, salesResult, cashResult, categoriesResult, movementsResult, receivablesResult, payablesResult, staffResult]) {
-    if (result.error) throw result.error;
-  }
+  // Only throw for the tables that must exist; others fall back to empty
+  if (productsResult.error) throw productsResult.error;
+  if (ordersResult.error) throw ordersResult.error;
+  if (tabsResult.error) throw tabsResult.error;
 
   const products = productsResult.data || [];
   const orders = ordersResult.data || [];
@@ -161,7 +162,7 @@ async function summary(supabase: ReturnType<typeof createClient>) {
     orders,
     tabs,
     sales,
-    cashSession: cashResult.data || null,
+    cashSession: cashResult.data ?? null,
     stockMovements: movementsResult.data || [],
     receivables: receivablesResult.data || [],
     payables: payablesResult.data || [],
@@ -283,7 +284,10 @@ async function createOrder(supabase: ReturnType<typeof createClient>, userId: st
     const product = productMap.get(item.productId);
     if (!product || !product.active) throw new Error('Produto indisponivel no cardapio.');
     const qty = quantity(item.quantity);
-    if (Number(product.stock_quantity) < qty) throw new Error(`Estoque insuficiente para ${product.name}.`);
+    const stockQty = product.stock_quantity;
+    if (stockQty !== null && Number(stockQty) > 0 && Number(stockQty) < qty) {
+      throw new Error(`Estoque insuficiente para ${product.name}.`);
+    }
     return {
       product,
       quantity: qty,
@@ -322,23 +326,26 @@ async function createOrder(supabase: ReturnType<typeof createClient>, userId: st
   if (itemError) throw itemError;
 
   for (const item of orderItems) {
-    const { error: stockError } = await supabase
-      .from('restaurant_products')
-      .update({ stock_quantity: Number(item.product.stock_quantity) - item.quantity, updated_at: new Date().toISOString() })
-      .eq('id', item.product.id);
-    if (stockError) throw stockError;
+    const currentStock = Number(item.product.stock_quantity ?? 0);
+    if (currentStock > 0) {
+      const { error: stockError } = await supabase
+        .from('restaurant_products')
+        .update({ stock_quantity: Math.max(0, currentStock - item.quantity), updated_at: new Date().toISOString() })
+        .eq('id', item.product.id);
+      if (stockError) throw stockError;
 
-    const { error: movementError } = await supabase.from('restaurant_stock_movements').insert({
-      product_id: item.product.id,
-      movement_type: 'out',
-      quantity: item.quantity,
-      unit_cost: 0,
-      reason: `Pedido ${order.order_number}`,
-      reference_type: 'restaurant_order',
-      reference_id: order.id,
-      created_by: userId,
-    });
-    if (movementError) throw movementError;
+      const { error: movementError } = await supabase.from('restaurant_stock_movements').insert({
+        product_id: item.product.id,
+        movement_type: 'out',
+        quantity: item.quantity,
+        unit_cost: 0,
+        reason: `Pedido ${order.order_number}`,
+        reference_type: 'restaurant_order',
+        reference_id: order.id,
+        created_by: userId,
+      });
+      if (movementError) throw movementError;
+    }
   }
 
   const { data: tab, error: tabError } = await supabase.from('restaurant_tabs').select('subtotal, total').eq('id', tabId).single();
@@ -516,7 +523,9 @@ Deno.serve(async req => {
     return json({ error: 'Acao invalida.' }, 400);
   } catch (error) {
     const status = typeof (error as { status?: unknown }).status === 'number' ? (error as { status: number }).status : 500;
-    const message = error instanceof Error ? error.message : 'Erro inesperado no restaurante.';
+    const message = error instanceof Error
+      ? error.message
+      : (error as { message?: string }).message || 'Erro inesperado no restaurante.';
     return json({ error: message }, status);
   }
 });

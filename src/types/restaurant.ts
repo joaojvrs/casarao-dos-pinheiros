@@ -146,6 +146,21 @@ export interface RestaurantSummary {
   };
 }
 
+export interface GuestOrderRecord {
+  id: string;
+  order_number: string;
+  status: RestaurantOrderStatus;
+  total: number;
+  notes: string | null;
+  created_at: string;
+  restaurant_order_items: Array<{
+    id: string;
+    name: string;
+    quantity: number;
+    unit_price: number;
+  }>;
+}
+
 export interface RestaurantProductInput {
   id?: string;
   categoryName: string;

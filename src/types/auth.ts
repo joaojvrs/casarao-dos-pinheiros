@@ -45,6 +45,16 @@ export interface InviteStaffInput {
   permissions: PermissionSet;
 }
 
+export interface UpdateStaffInput {
+  userId: string;
+  role: Exclude<AppRole, 'visitor' | 'guest' | 'master'>;
+  permissions: PermissionSet;
+}
+
+export interface RemoveStaffInput {
+  userId: string;
+}
+
 export interface StaffUser {
   id: string;
   email: string;

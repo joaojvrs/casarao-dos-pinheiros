@@ -167,6 +167,77 @@ async function sendInstructionsEmail(supabase: ReturnType<typeof createClient>, 
   return status;
 }
 
+function first<T>(value: T | T[] | null | undefined): T | null {
+  if (Array.isArray(value)) return value[0] || null;
+  return value || null;
+}
+
+async function createFrontdeskAssignment(supabase: ReturnType<typeof createClient>, input: {
+  bookingId: string;
+  accommodationId: string;
+  checkIn: string;
+  checkOut: string;
+  guestsCount: number;
+}) {
+  const { data: mappedRooms, error: mapError } = await supabase
+    .from('accommodation_room_map')
+    .select('priority, hk_rooms(id, numero, status)')
+    .eq('accommodation_id', input.accommodationId)
+    .eq('active', true)
+    .order('priority', { ascending: true });
+
+  if (mapError) throw mapError;
+
+  for (const mapped of mappedRooms || []) {
+    const room = first(mapped.hk_rooms as Record<string, unknown> | Record<string, unknown>[] | null);
+    if (!room?.id || String(room.status) !== 'limpo') continue;
+
+    const { data: overlaps, error: overlapError } = await supabase
+      .from('fd_room_assignments')
+      .select('id')
+      .eq('room_id', room.id)
+      .in('status', ['reservado', 'checked_in'])
+      .lt('checkin_previsto', input.checkOut)
+      .gt('checkout_previsto', input.checkIn);
+
+    if (overlapError) throw overlapError;
+    if ((overlaps || []).length > 0) continue;
+
+    const { data: assignment, error: assignmentError } = await supabase
+      .from('fd_room_assignments')
+      .insert({
+        booking_id: input.bookingId,
+        room_id: room.id,
+        quarto_numero: room.numero,
+        checkin_previsto: input.checkIn,
+        checkout_previsto: input.checkOut,
+        status: 'reservado',
+        adultos: input.guestsCount,
+        criancas: 0,
+        observacao: 'Atribuicao automatica criada no fechamento da hospedagem.',
+      })
+      .select('id, quarto_numero')
+      .single();
+
+    if (assignmentError) throw assignmentError;
+    return { status: 'assigned', assignmentId: assignment.id, roomNumber: assignment.quarto_numero };
+  }
+
+  await supabase.from('audit_logs').insert({
+    entity: 'bookings',
+    entity_id: input.bookingId,
+    action: 'frontdesk_assignment_pending',
+    metadata: {
+      accommodation_id: input.accommodationId,
+      check_in: input.checkIn,
+      check_out: input.checkOut,
+      reason: 'Nenhum quarto mapeado ou disponivel para atribuicao automatica.',
+    },
+  });
+
+  return { status: 'pending_manual_assignment' };
+}
+
 Deno.serve(async req => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (req.method !== 'POST') return json({ error: 'Metodo nao permitido.' }, 405);
@@ -232,12 +303,14 @@ Deno.serve(async req => {
       .from('bookings')
       .select('id', { count: 'exact', head: true })
       .eq('accommodation_id', payload.accommodationId)
-      .in('status', ['pending', 'confirmed'])
+      .in('status', ['pending', 'confirmed', 'checked_in'])
       .lt('check_in', payload.checkOut)
       .gt('check_out', payload.checkIn);
 
     if (overlapError) throw overlapError;
-    if ((overlapping || 0) > 0) return json({ error: 'Esta acomodacao ja possui hospedagem nesse periodo.' }, 409);
+    if ((overlapping || 0) > 0) {
+      return json({ error: 'Esta acomodacao ja possui uma hospedagem ativa ou confirmada nesse periodo. Escolha outra data ou outra acomodacao.' }, 409);
+    }
 
     const nights = daysBetween(payload.checkIn, payload.checkOut);
     const lodgingTotal = accommodation.nightly_rate * nights;
@@ -275,9 +348,19 @@ Deno.serve(async req => {
     });
 
     if (bookingError) {
-      if (bookingError.code === '23P01') return json({ error: 'Esta acomodacao acabou de ser reservada nesse periodo.' }, 409);
+      if (bookingError.code === '23P01') {
+        return json({ error: 'Esta acomodacao acabou de ser reservada nesse periodo. Escolha outra data ou outra acomodacao.' }, 409);
+      }
       throw bookingError;
     }
+
+    const frontdeskAssignment = await createFrontdeskAssignment(supabase, {
+      bookingId: booking.bookingId,
+      accommodationId: accommodation.id,
+      checkIn: payload.checkIn,
+      checkOut: payload.checkOut,
+      guestsCount: payload.guestsCount,
+    });
 
     const guestEmail = payload.guest.email.trim().toLowerCase();
     const { error: profileRoleError } = await supabase
@@ -327,6 +410,7 @@ Deno.serve(async req => {
         paymentStatus: 'paid',
         paymentMethod,
         emailStatus,
+        frontdeskAssignment,
       },
     }, 201);
   } catch (error) {

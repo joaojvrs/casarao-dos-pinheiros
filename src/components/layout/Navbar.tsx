@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
-import { motion, useScroll, useMotionValueEvent } from 'motion/react';
-import { BedDouble, ClipboardList, ConciergeBell, CreditCard, KeyRound, Menu, ShieldCheck, Sparkles, User, Users, X } from 'lucide-react';
+import { motion, useMotionValueEvent, useScroll } from 'motion/react';
+import { Check, LogOut, Mail, Phone, Save, ShieldCheck, Sparkles, User, X } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { signOutUser, updateCurrentUserProfile } from '../../services/auth';
 import type { AppPage } from '../../types/navigation';
 
 interface NavbarProps {
@@ -13,49 +14,78 @@ interface NavbarProps {
 
 export const Navbar: React.FC<NavbarProps> = ({ onWeddingClick, onGuestClick, onBookingClick, onNavigate }) => {
   const [scrolled, setScrolled] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const { authenticated, role, permissions } = useAuth();
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [profileEmail, setProfileEmail] = useState('');
+  const [profileName, setProfileName] = useState('');
+  const [profilePhone, setProfilePhone] = useState('');
+  const [profileMessage, setProfileMessage] = useState('');
+  const [profileError, setProfileError] = useState('');
+  const [profileSaving, setProfileSaving] = useState(false);
+  const auth = useAuth();
   const { scrollY } = useScroll();
 
-  useMotionValueEvent(scrollY, 'change', (y) => {
-    setScrolled(y > 72);
-  });
+  useMotionValueEvent(scrollY, 'change', y => setScrolled(y > 72));
 
   const hasTeamAccess = useMemo(() => {
-    if (role === 'visitor' || role === 'guest') return false;
-    if (role === 'master' || role === 'admin') return true;
-    return Object.values(permissions).some(Boolean);
-  }, [permissions, role]);
+    if (auth.role === 'visitor' || auth.role === 'guest') return false;
+    if (auth.role === 'master' || auth.role === 'admin') return true;
+    return Object.values(auth.permissions).some(Boolean);
+  }, [auth.permissions, auth.role]);
 
-  const hasHRAccess = useMemo(
-    () => ['master', 'admin', 'manager', 'hr'].includes(role) || Boolean(permissions.hr),
-    [role, permissions],
+  const hasGuestPortalAccess = useMemo(
+    () => auth.authenticated && ['guest', 'master', 'admin', 'manager'].includes(auth.role),
+    [auth.authenticated, auth.role],
   );
-
-  const hasHousekeepingAccess = useMemo(
-    () => ['master', 'admin', 'manager', 'housekeeping'].includes(role) || Boolean(permissions.housekeeping),
-    [role, permissions],
-  );
-
-  const hasFrontDeskAccess = useMemo(
-    () => ['master', 'admin', 'manager', 'attendant', 'frontdesk'].includes(role) || Boolean(permissions.bookings) || Boolean(permissions.guests),
-    [role, permissions],
-  );
-
-  const hasFinancialAccess = useMemo(
-    () => ['master', 'admin', 'manager', 'financial'].includes(role) || Boolean(permissions.payments),
-    [role, permissions],
-  );
-
-  const hasGuestPortalAccess = useMemo(() => (
-    role === 'guest' || role === 'master' || role === 'admin' || role === 'manager'
-  ), [role]);
 
   const handleNavigate = (page: AppPage) => {
-    setMenuOpen(false);
+    setAccountOpen(false);
     if (page === 'booking') onBookingClick?.();
     else if (page === 'auth') onGuestClick?.();
     else onNavigate?.(page);
+  };
+
+  const openAccount = () => {
+    if (!auth.authenticated) {
+      onGuestClick?.();
+      return;
+    }
+
+    setProfileEmail(String(auth.user?.email || ''));
+    setProfileName(String(auth.user?.user_metadata?.full_name || ''));
+    setProfilePhone(String(auth.user?.user_metadata?.phone || ''));
+    setProfileMessage('');
+    setProfileError('');
+    setAccountOpen(open => !open);
+  };
+
+  const saveProfile = async () => {
+    setProfileSaving(true);
+    setProfileError('');
+    setProfileMessage('');
+    try {
+      await updateCurrentUserProfile({ email: profileEmail, fullName: profileName, phone: profilePhone });
+      await auth.refreshAccess();
+      setProfileMessage('Dados atualizados. Se o e-mail mudou, verifique a caixa de entrada.');
+    } catch (error) {
+      setProfileError(error instanceof Error ? error.message : 'Nao foi possivel atualizar sua conta.');
+    } finally {
+      setProfileSaving(false);
+    }
+  };
+
+  const logout = async () => {
+    setProfileSaving(true);
+    setProfileError('');
+    try {
+      await signOutUser();
+      await auth.refreshAccess();
+      setAccountOpen(false);
+      onNavigate?.('home');
+    } catch (error) {
+      setProfileError(error instanceof Error ? error.message : 'Nao foi possivel sair da conta.');
+    } finally {
+      setProfileSaving(false);
+    }
   };
 
   return (
@@ -63,11 +93,10 @@ export const Navbar: React.FC<NavbarProps> = ({ onWeddingClick, onGuestClick, on
       initial={{ y: -100, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
       transition={{ duration: 1.1, ease: [0.22, 1, 0.36, 1] }}
-      className="fixed top-0 left-0 w-full z-[500] pointer-events-none"
+      className="pointer-events-none fixed left-0 top-0 z-[500] w-full"
     >
-      {/* Glass background — appears on scroll */}
       <motion.div
-        className="absolute inset-0 pointer-events-none"
+        className="pointer-events-none absolute inset-0"
         animate={{
           background: scrolled ? 'rgba(10,20,18,0.88)' : 'rgba(10,20,18,0)',
           backdropFilter: scrolled ? 'blur(22px)' : 'blur(0px)',
@@ -76,9 +105,8 @@ export const Navbar: React.FC<NavbarProps> = ({ onWeddingClick, onGuestClick, on
         transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
       />
 
-      {/* Bottom gold hairline — appears on scroll */}
       <motion.div
-        className="absolute bottom-0 inset-x-0 h-px pointer-events-none"
+        className="pointer-events-none absolute bottom-0 inset-x-0 h-px"
         animate={{ opacity: scrolled ? 1 : 0 }}
         transition={{ duration: 0.55 }}
         style={{
@@ -86,88 +114,16 @@ export const Navbar: React.FC<NavbarProps> = ({ onWeddingClick, onGuestClick, on
         }}
       />
 
-      <div className="relative px-6 py-4 flex items-center justify-between pointer-events-auto">
+      <div className="pointer-events-auto relative flex items-center justify-between px-6 py-4">
+        <div className="w-9" />
 
-        {/* Left — menu */}
-        <div className="relative">
-          <motion.button
-            onClick={() => setMenuOpen(open => !open)}
-            data-hover="menu"
-            className="flex items-center justify-center w-9 h-9 rounded-full border transition-all duration-300"
-            animate={{
-              borderColor: scrolled ? 'rgba(195,163,122,0.25)' : 'rgba(255,255,255,0.15)',
-            }}
-            whileHover={{ borderColor: 'rgba(195,163,122,0.6)', backgroundColor: 'rgba(195,163,122,0.08)' }}
-            transition={{ duration: 0.3 }}
-          >
-            {menuOpen ? <X size={16} className="text-white/75" /> : <Menu size={16} className="text-white/75" />}
-          </motion.button>
-
-          {menuOpen && (
-            <motion.div
-              initial={{ opacity: 0, y: 8, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 8, scale: 0.98 }}
-              className="absolute left-0 top-12 w-72 overflow-hidden rounded-xl border border-white/12 bg-[#101815]/95 p-2 shadow-2xl backdrop-blur-xl"
-            >
-              <div className="border-b border-white/10 px-3 py-3">
-                <p className="text-[10px] font-bold uppercase tracking-[0.26em] text-[#c3a37a]">Menu</p>
-                <p className="mt-1 text-xs text-white/45">{authenticated ? 'Sua conta esta ativa.' : 'Acesse sua conta para personalizar a experiencia.'}</p>
-              </div>
-
-              <div className="py-2">
-                <button onClick={() => handleNavigate('booking')} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-white/72 transition hover:bg-white/8 hover:text-white">
-                  <BedDouble size={16} className="text-[#c3a37a]" />
-                  Reservas
-                </button>
-                {hasGuestPortalAccess && (
-                  <button onClick={() => handleNavigate('guest')} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-white/72 transition hover:bg-white/8 hover:text-white">
-                    <Sparkles size={16} className="text-[#c3a37a]" />
-                    Portal do hospede
-                  </button>
-                )}
-                {hasHRAccess && (
-                  <button onClick={() => handleNavigate('hr')} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-white/72 transition hover:bg-white/8 hover:text-white">
-                    <Users size={16} className="text-[#c3a37a]" />
-                    RH & Escalas
-                  </button>
-                )}
-                {hasFrontDeskAccess && (
-                  <button onClick={() => handleNavigate('frontdesk')} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-white/72 transition hover:bg-white/8 hover:text-white">
-                    <ConciergeBell size={16} className="text-[#c3a37a]" />
-                    Recepção
-                  </button>
-                )}
-                {hasHousekeepingAccess && (
-                  <button onClick={() => handleNavigate('housekeeping')} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-white/72 transition hover:bg-white/8 hover:text-white">
-                    <ClipboardList size={16} className="text-[#c3a37a]" />
-                    Governança
-                  </button>
-                )}
-                {hasFinancialAccess && (
-                  <button onClick={() => handleNavigate('financial')} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-white/72 transition hover:bg-white/8 hover:text-white">
-                    <CreditCard size={16} className="text-[#c3a37a]" />
-                    Financeiro
-                  </button>
-                )}
-                <button onClick={() => handleNavigate('auth')} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-white/72 transition hover:bg-white/8 hover:text-white">
-                  <KeyRound size={16} className="text-[#c3a37a]" />
-                  {authenticated ? 'Minha conta' : 'Entrar'}
-                </button>
-              </div>
-            </motion.div>
-          )}
-        </div>
-
-        {/* Center — logo */}
         <motion.div
           className="absolute left-1/2 -translate-x-1/2"
           animate={{ scale: scrolled ? 0.78 : 1 }}
           transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
         >
-          {/* Warm halo behind logo — always present, subtle */}
           <div
-            className="absolute pointer-events-none"
+            className="pointer-events-none absolute"
             style={{
               inset: '-50%',
               background: 'radial-gradient(circle at 50% 50%, rgba(195,163,122,0.18) 0%, transparent 65%)',
@@ -176,31 +132,22 @@ export const Navbar: React.FC<NavbarProps> = ({ onWeddingClick, onGuestClick, on
           />
           <img
             src="/logo.png"
-            alt="Casarão Vale do Eden Reserva"
+            alt="Casarao Vale do Eden Reserva"
             className="relative h-14 w-auto object-contain"
-            style={{
-              mixBlendMode: 'screen',
-              opacity: 0.94,
-              filter: 'brightness(1.06) contrast(1.04)',
-            }}
+            style={{ mixBlendMode: 'screen', opacity: 0.94, filter: 'brightness(1.06) contrast(1.04)' }}
           />
         </motion.div>
 
-        {/* Right — casamentos + user + reservar */}
         <div className="flex items-center gap-3">
           {hasTeamAccess && (
             <motion.button
               onClick={() => handleNavigate('operations')}
-              className="hidden sm:flex items-center gap-1.5 px-4 py-[7px] rounded-full text-[10px] uppercase tracking-widest font-medium border transition-all duration-300"
+              className="hidden items-center gap-1.5 rounded-full border px-4 py-[7px] text-[10px] font-medium uppercase tracking-widest transition-all duration-300 sm:flex"
               animate={{
                 borderColor: scrolled ? 'rgba(195,163,122,0.35)' : 'rgba(255,255,255,0.18)',
                 color: 'rgba(195,163,122,0.9)',
               }}
-              whileHover={{
-                borderColor: 'rgba(195,163,122,0.8)',
-                backgroundColor: 'rgba(195,163,122,0.12)',
-                color: 'rgb(195,163,122)',
-              }}
+              whileHover={{ borderColor: 'rgba(195,163,122,0.8)', backgroundColor: 'rgba(195,163,122,0.12)', color: 'rgb(195,163,122)' }}
               transition={{ duration: 0.3 }}
             >
               <ShieldCheck size={13} />
@@ -211,49 +158,94 @@ export const Navbar: React.FC<NavbarProps> = ({ onWeddingClick, onGuestClick, on
           {onWeddingClick && (
             <motion.button
               onClick={onWeddingClick}
-              className="hidden md:flex items-center gap-1.5 px-4 py-[7px] rounded-full text-[10px] uppercase tracking-widest font-medium border transition-all duration-300"
+              className="hidden items-center gap-1.5 rounded-full border px-4 py-[7px] text-[10px] font-medium uppercase tracking-widest transition-all duration-300 md:flex"
               animate={{
                 borderColor: scrolled ? 'rgba(195,163,122,0.2)' : 'rgba(255,255,255,0.1)',
                 color: 'rgba(195,163,122,0.75)',
               }}
-              whileHover={{
-                borderColor: 'rgba(195,163,122,0.65)',
-                color: 'rgb(195,163,122)',
-                backgroundColor: 'rgba(195,163,122,0.08)',
-              }}
+              whileHover={{ borderColor: 'rgba(195,163,122,0.65)', color: 'rgb(195,163,122)', backgroundColor: 'rgba(195,163,122,0.08)' }}
               transition={{ duration: 0.3 }}
             >
-              <span style={{ fontSize: 9 }}>✦</span>
+              <span style={{ fontSize: 9 }}>*</span>
               Casamentos
             </motion.button>
           )}
 
-          <motion.button
-            onClick={onGuestClick}
-            data-hover="perfil"
-            className="flex items-center justify-center w-9 h-9 rounded-full border transition-all duration-300"
-            animate={{
-              borderColor: scrolled ? 'rgba(195,163,122,0.25)' : 'rgba(255,255,255,0.15)',
-            }}
-            whileHover={{ borderColor: 'rgba(195,163,122,0.6)', backgroundColor: 'rgba(195,163,122,0.08)' }}
-            transition={{ duration: 0.3 }}
-          >
-            <User size={16} className="text-white/75" />
-          </motion.button>
+          {hasGuestPortalAccess && (
+            <motion.button
+              onClick={() => handleNavigate('guest')}
+              className="hidden items-center gap-1.5 rounded-full border px-4 py-[7px] text-[10px] font-medium uppercase tracking-widest transition-all duration-300 sm:flex"
+              animate={{
+                borderColor: scrolled ? 'rgba(195,163,122,0.35)' : 'rgba(255,255,255,0.16)',
+                color: 'rgba(255,255,255,0.84)',
+              }}
+              whileHover={{ borderColor: 'rgba(195,163,122,0.75)', backgroundColor: 'rgba(195,163,122,0.12)', color: 'rgb(195,163,122)' }}
+              transition={{ duration: 0.3 }}
+            >
+              <Sparkles size={13} />
+              Portal do hospede
+            </motion.button>
+          )}
+
+          <div className="relative">
+            <motion.button
+              onClick={openAccount}
+              data-hover="perfil"
+              className="flex h-9 w-9 items-center justify-center rounded-full border transition-all duration-300"
+              animate={{ borderColor: scrolled ? 'rgba(195,163,122,0.25)' : 'rgba(255,255,255,0.15)' }}
+              whileHover={{ borderColor: 'rgba(195,163,122,0.6)', backgroundColor: 'rgba(195,163,122,0.08)' }}
+              transition={{ duration: 0.3 }}
+            >
+              {accountOpen ? <X size={16} className="text-white/75" /> : <User size={16} className="text-white/75" />}
+            </motion.button>
+
+            {accountOpen && auth.authenticated && (
+              <motion.div
+                initial={{ opacity: 0, y: 8, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                className="absolute right-0 top-12 w-[min(88vw,320px)] overflow-hidden rounded-xl border border-white/12 bg-[#101815]/96 p-4 text-white shadow-2xl backdrop-blur-xl"
+              >
+                <div className="mb-4 border-b border-white/10 pb-4">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.26em] text-[#c3a37a]">Minha conta</p>
+                  <p className="mt-1 flex items-center gap-2 truncate text-xs text-white/55"><Mail size={13} />{auth.user?.email}</p>
+                </div>
+
+                <div className="space-y-3">
+                  <label className="block">
+                    <span className="mb-1.5 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.18em] text-white/35"><Mail size={12} />E-mail</span>
+                    <input type="email" value={profileEmail} onChange={event => setProfileEmail(event.target.value)} className="h-10 w-full rounded-lg border border-white/10 bg-white/8 px-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-[#c3a37a]/70" />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1.5 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.18em] text-white/35"><User size={12} />Nome</span>
+                    <input value={profileName} onChange={event => setProfileName(event.target.value)} className="h-10 w-full rounded-lg border border-white/10 bg-white/8 px-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-[#c3a37a]/70" />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1.5 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.18em] text-white/35"><Phone size={12} />Telefone</span>
+                    <input value={profilePhone} onChange={event => setProfilePhone(event.target.value)} className="h-10 w-full rounded-lg border border-white/10 bg-white/8 px-3 text-sm text-white outline-none transition placeholder:text-white/30 focus:border-[#c3a37a]/70" />
+                  </label>
+                </div>
+
+                {profileMessage && <p className="mt-3 flex items-center gap-2 rounded-lg border border-emerald-400/20 bg-emerald-400/10 p-2 text-xs text-emerald-100"><Check size={13} />{profileMessage}</p>}
+                {profileError && <p className="mt-3 rounded-lg border border-red-400/25 bg-red-400/10 p-2 text-xs text-red-100">{profileError}</p>}
+
+                <div className="mt-4 grid grid-cols-2 gap-2">
+                  <button onClick={saveProfile} disabled={profileSaving} className="flex h-10 items-center justify-center gap-2 rounded-lg bg-[#c3a37a] text-xs font-bold uppercase tracking-[0.16em] text-[#1a0f0a] transition hover:bg-amber-200 disabled:opacity-60">
+                    <Save size={13} />Salvar
+                  </button>
+                  <button onClick={logout} disabled={profileSaving} className="flex h-10 items-center justify-center gap-2 rounded-lg border border-white/12 text-xs font-bold uppercase tracking-[0.16em] text-white/70 transition hover:border-red-300/50 hover:text-red-100 disabled:opacity-60">
+                    <LogOut size={13} />Sair
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </div>
 
           <motion.button
             onClick={onBookingClick}
             data-hover="reservar"
-            className="px-5 py-[7px] rounded-full text-[10px] uppercase tracking-widest font-medium border transition-all duration-300"
-            animate={{
-              borderColor: scrolled ? 'rgba(195,163,122,0.45)' : 'rgba(255,255,255,0.2)',
-              color: 'rgba(255,255,255,0.85)',
-            }}
-            whileHover={{
-              borderColor: 'rgba(195,163,122,0.8)',
-              backgroundColor: 'rgba(195,163,122,0.12)',
-              color: 'rgb(195,163,122)',
-            }}
+            className="rounded-full border px-5 py-[7px] text-[10px] font-medium uppercase tracking-widest transition-all duration-300"
+            animate={{ borderColor: scrolled ? 'rgba(195,163,122,0.45)' : 'rgba(255,255,255,0.2)', color: 'rgba(255,255,255,0.85)' }}
+            whileHover={{ borderColor: 'rgba(195,163,122,0.8)', backgroundColor: 'rgba(195,163,122,0.12)', color: 'rgb(195,163,122)' }}
             transition={{ duration: 0.3 }}
           >
             Reservar

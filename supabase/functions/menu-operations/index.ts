@@ -6,7 +6,7 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-type Action = 'guest_menu' | 'place_guest_order';
+type Action = 'guest_menu' | 'guest_stay' | 'place_guest_order' | 'guest_orders';
 
 interface OrderItemInput {
   productId: string;
@@ -23,6 +23,20 @@ function json(body: unknown, status = 200) {
 
 function code(prefix: string) {
   return `${prefix}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+}
+
+function todaySaoPaulo() {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+}
+
+function first<T>(value: T | T[] | null | undefined): T | null {
+  if (Array.isArray(value)) return value[0] || null;
+  return value || null;
 }
 
 async function getAdmin() {
@@ -55,14 +69,119 @@ async function guestMenu(supabase: ReturnType<typeof createClient>) {
   return data || [];
 }
 
+function toGuestStay(booking: Record<string, unknown>) {
+  const today = todaySaoPaulo();
+  const status = String(booking.status || '');
+  const checkIn = String(booking.check_in || '');
+  const checkOut = String(booking.check_out || '');
+  const accommodation = first(booking.accommodations as Record<string, unknown> | Record<string, unknown>[] | null);
+  const guest = first(booking.guests as Record<string, unknown> | Record<string, unknown>[] | null);
+  const assignments = (booking.fd_room_assignments || []) as Array<Record<string, unknown>>;
+  const activeAssignment = assignments.find(item => ['checked_in', 'reservado'].includes(String(item.status))) || assignments[0] || null;
+  const canOrder = status === 'checked_in' && checkIn <= today && checkOut > today;
+  const phase = canOrder ? 'active' : checkOut <= today || ['checked_out', 'completed', 'cancelled', 'no_show'].includes(status) ? 'past' : 'upcoming';
+
+  return {
+    bookingId: booking.id,
+    confirmationCode: booking.confirmation_code,
+    status,
+    checkIn,
+    checkOut,
+    guestsCount: booking.guests_count,
+    nights: booking.nights,
+    total: booking.total,
+    accommodation: {
+      id: accommodation?.id || String(booking.accommodation_id || ''),
+      name: accommodation?.name || 'Hospedagem Vale do Eden',
+      image: accommodation?.id === 'mata'
+        ? '/1761873847903-CabanaMata_Vista.jpg'
+        : accommodation?.id === 'casarao'
+          ? '/1761696197303-Entrada_Casarao.jpg'
+          : '/1761997463193-CabanaSuica_Vista.jpg',
+    },
+    guest: {
+      name: guest?.name || 'Hospede',
+      email: guest?.email || '',
+      phone: guest?.phone || '',
+    },
+    room: activeAssignment ? {
+      number: activeAssignment.quarto_numero,
+      status: activeAssignment.status,
+      checkinReal: activeAssignment.checkin_real || null,
+      checkoutReal: activeAssignment.checkout_real || null,
+    } : null,
+    canOrder,
+    phase,
+  };
+}
+
+async function getGuestStay(supabase: ReturnType<typeof createClient>, email: string) {
+  const today = todaySaoPaulo();
+  const { data, error } = await supabase
+    .from('bookings')
+    .select('id, confirmation_code, accommodation_id, status, check_in, check_out, guests_count, nights, total, accommodations(id, name), guests!inner(name, email, phone), fd_room_assignments(quarto_numero, status, checkin_real, checkout_real)')
+    .ilike('guests.email', email)
+    .in('status', ['pending', 'confirmed', 'checked_in', 'checked_out', 'completed'])
+    .order('check_in', { ascending: true });
+
+  if (error) throw error;
+
+  const bookings = (data || []).filter(item => first(item.guests as Record<string, unknown> | Record<string, unknown>[] | null)?.email);
+  const active = bookings.find(item => item.status === 'checked_in' && item.check_in <= today && item.check_out > today);
+  const upcoming = bookings.find(item => ['pending', 'confirmed'].includes(item.status) && item.check_out >= today);
+  const recentPast = [...bookings].reverse().find(item => ['checked_out', 'completed'].includes(item.status) || item.check_out <= today);
+  const selected = active || upcoming || recentPast || null;
+
+  return selected ? toGuestStay(selected as Record<string, unknown>) : null;
+}
+
+async function getActiveGuestStayOrThrow(supabase: ReturnType<typeof createClient>, email: string, requestedBookingId?: string) {
+  const stay = await getGuestStay(supabase, email);
+  if (!stay) throw Object.assign(new Error('Nenhuma hospedagem encontrada para esta conta.'), { status: 403 });
+  if (requestedBookingId && stay.bookingId !== requestedBookingId) {
+    throw Object.assign(new Error('Esta hospedagem nao pertence a sua conta.'), { status: 403 });
+  }
+  if (!stay.canOrder) {
+    throw Object.assign(new Error('Pedidos ficam disponiveis apenas durante a hospedagem ativa, apos o check-in e antes do checkout.'), { status: 403 });
+  }
+  return stay;
+}
+
+async function getGuestOrders(
+  supabase: ReturnType<typeof createClient>,
+  email: string,
+) {
+  const stay = await getGuestStay(supabase, email);
+  if (!stay) return [];
+
+  const { data, error } = await supabase
+    .from('restaurant_orders')
+    .select('id, order_number, status, total, notes, created_at, restaurant_order_items(id, name, quantity, unit_price)')
+    .eq('booking_id', stay.bookingId)
+    .eq('origin', 'guest')
+    .order('created_at', { ascending: false })
+    .limit(15);
+
+  if (error) throw error;
+  return data || [];
+}
+
 async function placeGuestOrder(
   supabase: ReturnType<typeof createClient>,
   userId: string,
+  userEmail: string,
   payload: Record<string, unknown>,
 ) {
   const items = (payload.items || []) as OrderItemInput[];
-  const notes = String(payload.notes || '').trim() || null;
-  const roomName = String(payload.roomName || 'Hospede').trim();
+  const deliveryLocation = String(payload.deliveryLocation || '').trim();
+  const notesRaw = String(payload.notes || '').trim();
+  const combinedNotes = [
+    deliveryLocation ? `Entregar em: ${deliveryLocation}` : '',
+    notesRaw,
+  ].filter(Boolean).join(' · ') || null;
+
+  const stay = await getActiveGuestStayOrThrow(supabase, userEmail, String(payload.bookingId || ''));
+  const roomName = String(payload.roomName || deliveryLocation || stay.room?.number || stay.accommodation.name || 'Hospede').trim();
 
   if (!Array.isArray(items) || items.length === 0) throw new Error('Inclua pelo menos um item no pedido.');
 
@@ -87,7 +206,7 @@ async function placeGuestOrder(
   if (!tab) {
     const { data: newTab, error: tabError } = await supabase
       .from('restaurant_tabs')
-      .insert({ code: code('CMD'), table_id: table.id, status: 'open', opened_by: userId })
+      .insert({ code: code('CMD'), table_id: table.id, booking_id: stay.bookingId, status: 'open', opened_by: userId })
       .select('id, code, subtotal')
       .single();
     if (tabError) throw tabError;
@@ -112,7 +231,10 @@ async function placeGuestOrder(
     }
     const qty = Number(item.quantity);
     if (qty <= 0) throw new Error('Quantidade invalida.');
-    if (Number(product.stock_quantity) < qty) throw new Error(`Estoque insuficiente para ${product.name}.`);
+    const stockQty = product.stock_quantity;
+    if (stockQty !== null && Number(stockQty) > 0 && Number(stockQty) < qty) {
+      throw new Error(`Estoque insuficiente para ${product.name}.`);
+    }
     const itemTotal = Math.round(qty * Number(product.sale_price));
     orderTotal += itemTotal;
     return { product, quantity: qty, notes: String(item.notes || '').trim() || null, total: itemTotal };
@@ -123,10 +245,11 @@ async function placeGuestOrder(
     .from('restaurant_orders')
     .insert({
       tab_id: tab.id,
+      booking_id: stay.bookingId,
       order_number: code('PED'),
       origin: 'guest',
       status: 'new',
-      notes,
+      notes: combinedNotes,
       total: orderTotal,
       created_by: userId,
     })
@@ -148,22 +271,25 @@ async function placeGuestOrder(
   );
   if (itemError) throw itemError;
 
-  // Deduct stock
+  // Deduct stock (only when stock is being tracked and has quantity)
   for (const item of orderItems) {
-    await supabase
-      .from('restaurant_products')
-      .update({ stock_quantity: Number(item.product.stock_quantity) - item.quantity, updated_at: new Date().toISOString() })
-      .eq('id', item.product.id);
-    await supabase.from('restaurant_stock_movements').insert({
-      product_id: item.product.id,
-      movement_type: 'out',
-      quantity: item.quantity,
-      unit_cost: 0,
-      reason: `Pedido hospede ${order.order_number}`,
-      reference_type: 'restaurant_order',
-      reference_id: order.id,
-      created_by: userId,
-    });
+    const currentStock = Number(item.product.stock_quantity ?? 0);
+    if (currentStock > 0) {
+      await supabase
+        .from('restaurant_products')
+        .update({ stock_quantity: Math.max(0, currentStock - item.quantity), updated_at: new Date().toISOString() })
+        .eq('id', item.product.id);
+      await supabase.from('restaurant_stock_movements').insert({
+        product_id: item.product.id,
+        movement_type: 'out',
+        quantity: item.quantity,
+        unit_cost: 0,
+        reason: `Pedido hospede ${order.order_number}`,
+        reference_type: 'restaurant_order',
+        reference_id: order.id,
+        created_by: userId,
+      });
+    }
   }
 
   // Update tab total
@@ -190,10 +316,22 @@ Deno.serve(async req => {
       return json({ data: await guestMenu(supabase) });
     }
 
+    if (action === 'guest_stay') {
+      const user = await getRequestUser(req, supabase);
+      if (!user?.email) return json({ error: 'Sessao invalida. Faca login para acessar sua hospedagem.' }, 401);
+      return json({ data: await getGuestStay(supabase, user.email) });
+    }
+
     if (action === 'place_guest_order') {
       const user = await getRequestUser(req, supabase);
-      if (!user) return json({ error: 'Sessao invalida. Faca login para fazer pedidos.' }, 401);
-      return json({ data: await placeGuestOrder(supabase, user.id, payload) }, 201);
+      if (!user?.email) return json({ error: 'Sessao invalida. Faca login para fazer pedidos.' }, 401);
+      return json({ data: await placeGuestOrder(supabase, user.id, user.email, payload) }, 201);
+    }
+
+    if (action === 'guest_orders') {
+      const user = await getRequestUser(req, supabase);
+      if (!user?.email) return json({ error: 'Sessao invalida.' }, 401);
+      return json({ data: await getGuestOrders(supabase, user.email) });
     }
 
     return json({ error: 'Acao invalida.' }, 400);

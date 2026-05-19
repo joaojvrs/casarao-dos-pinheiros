@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase';
-import type { AppRole, AuthUserResult, InviteStaffInput, PermissionSet, RegisterUserInput, StaffUser } from '../types/auth';
+import type { AppRole, AuthUserResult, InviteStaffInput, PermissionSet, RegisterUserInput, RemoveStaffInput, StaffUser, UpdateStaffInput } from '../types/auth';
 
 interface RegisterResponse {
   user: AuthUserResult;
@@ -8,7 +8,6 @@ interface RegisterResponse {
 interface InviteStaffResponse {
   user: AuthUserResult & {
     permissions: Record<string, boolean>;
-    temporaryPassword: string;
   };
 }
 
@@ -59,6 +58,29 @@ export async function signOutUser() {
   if (error) throw new Error(error.message);
 }
 
+export async function updateCurrentUserProfile(input: { fullName: string; phone: string; email: string }) {
+  const fullName = input.fullName.trim();
+  const phone = input.phone.trim();
+  const email = input.email.trim().toLowerCase();
+
+  const { data: authData, error: authError } = await supabase.auth.updateUser({
+    email,
+    data: { full_name: fullName, phone },
+  });
+  if (authError) throw new Error(authError.message);
+
+  const user = authData.user;
+  if (!user) throw new Error('Sessao invalida para atualizar perfil.');
+
+  const { error: profileError } = await supabase
+    .from('profiles')
+    .update({ email, full_name: fullName, phone, updated_at: new Date().toISOString() })
+    .eq('id', user.id);
+
+  if (profileError) throw new Error(profileError.message);
+  return user;
+}
+
 export function getSessionRole(appMetadata: Record<string, unknown> | undefined): AppRole {
   const role = appMetadata?.role;
   if (
@@ -85,8 +107,7 @@ export async function getCurrentAccess(): Promise<{ authenticated: boolean; role
     return { authenticated: false, role: 'visitor', permissions: {} };
   }
 
-  const { data: refreshed } = await supabase.auth.refreshSession();
-  const session = refreshed.session || sessionData.session;
+  const session = sessionData.session;
   const metadata = session.user.app_metadata as Record<string, unknown> | undefined;
   const metadataRole = getSessionRole(metadata);
   const metadataPermissions = (metadata?.permissions || {}) as PermissionSet;
@@ -123,6 +144,16 @@ export async function inviteStaff(input: InviteStaffInput) {
 
   if (!data?.user) throw new Error('Convite criado sem retorno de usuario.');
   return data.user;
+}
+
+export async function updateStaff(input: UpdateStaffInput): Promise<void> {
+  const { error } = await supabase.functions.invoke('update-staff', { body: input });
+  if (error) throw new Error(await parseFunctionError(error));
+}
+
+export async function removeStaff(input: RemoveStaffInput): Promise<void> {
+  const { error } = await supabase.functions.invoke('remove-staff', { body: input });
+  if (error) throw new Error(await parseFunctionError(error));
 }
 
 export async function listStaffUsers(): Promise<StaffUser[]> {

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import type { ReactElement } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'motion/react';
@@ -35,6 +35,7 @@ const HRPortal = lazy(() => import('./pages/HRPortal').then(m => ({ default: m.H
 const HousekeepingPortal = lazy(() => import('./pages/HousekeepingPortal').then(m => ({ default: m.HousekeepingPortal })));
 const FinancialPortal = lazy(() => import('./pages/FinancialPortal').then(m => ({ default: m.FinancialPortal })));
 const GarcomPortal = lazy(() => import('./pages/GarcomPortal').then(m => ({ default: m.GarcomPortal })));
+const SetPasswordPage = lazy(() => import('./pages/SetPasswordPage').then(m => ({ default: m.SetPasswordPage })));
 
 const ROUTES: Record<AppPage, string> = {
   home: '/',
@@ -82,6 +83,16 @@ function Guard({ children, teamOnly = false, guestOnly = false, adminOnly = fals
 }
 
 function HomePage({ navigatePage }: { navigatePage: (page: AppPage) => void }) {
+  const navigate = useNavigate();
+
+  // Detecta convite no hash e redireciona
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (hash.includes('access_token') && hash.includes('type=invite')) {
+      navigate('/definir-senha', { replace: true });
+    }
+  }, [navigate]);
+
   return (
     <motion.div key="home" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
       <Navbar
@@ -181,6 +192,7 @@ export default function App() {
               <Route path="/equipe/rh" element={<Guard teamOnly permission="hr"><motion.div key="hr" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}><HRPortal onBack={() => navigate('/equipe')} /></motion.div></Guard>} />
               <Route path="/equipe/financeiro" element={<Guard teamOnly permission="payments"><motion.div key="financial" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}><FinancialPortal onBack={() => navigate('/equipe')} /></motion.div></Guard>} />
               <Route path="/equipe/garcom" element={<Guard teamOnly permission="kitchen"><motion.div key="garcom" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}><GarcomPortal onBack={() => navigate('/equipe')} /></motion.div></Guard>} />
+              <Route path="/definir-senha" element={<motion.div key="set-password" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}><SetPasswordPage /></motion.div>} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </AnimatePresence>

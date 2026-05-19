@@ -19,6 +19,7 @@ import {
   ShieldCheck,
   Sparkles,
   Users,
+  Wine,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -85,6 +86,7 @@ export function BookingPortal({ onBack }: { onBack: () => void }) {
   const [cardLastFour, setCardLastFour] = useState('');
   const [installments, setInstallments] = useState(1);
   const [created, setCreated] = useState<CreateBookingResult | null>(null);
+  const [redirectCountdown, setRedirectCountdown] = useState(7);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -111,6 +113,19 @@ export function BookingPortal({ onBack }: { onBack: () => void }) {
     event.preventDefault();
     setError('');
     setCreated(null);
+
+    const todayIso = new Date().toISOString().slice(0, 10);
+    if (checkIn < todayIso) {
+      setError('O check-in nao pode ser no passado.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    if (checkOut <= checkIn) {
+      setError('O checkout precisa ser posterior ao check-in.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
 
     if (!canBook) {
       navigate('/login', { state: { from: location.pathname } });
@@ -148,6 +163,7 @@ export function BookingPortal({ onBack }: { onBack: () => void }) {
         notes,
       });
       setCreated(booking);
+      setRedirectCountdown(7);
       await auth.refreshAccess();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err) {
@@ -157,6 +173,31 @@ export function BookingPortal({ onBack }: { onBack: () => void }) {
       setSubmitting(false);
     }
   };
+
+  useEffect(() => {
+    if (!created) return;
+    const redirect = window.setTimeout(() => navigate('/hospede', { replace: true }), 7000);
+    const tick = window.setInterval(() => setRedirectCountdown(value => Math.max(0, value - 1)), 1000);
+    return () => {
+      window.clearTimeout(redirect);
+      window.clearInterval(tick);
+    };
+  }, [created, navigate]);
+
+  if (created) {
+    return (
+      <BookingSuccess
+        booking={created}
+        accommodation={accommodation}
+        checkIn={checkIn}
+        checkOut={checkOut}
+        guests={guests}
+        redirectCountdown={redirectCountdown}
+        onEnterPortal={() => navigate('/hospede', { replace: true })}
+        onNewBooking={() => setCreated(null)}
+      />
+    );
+  }
 
   return (
     <main className="min-h-screen bg-[#f7f3ea] text-[#20140d]">
@@ -181,23 +222,6 @@ export function BookingPortal({ onBack }: { onBack: () => void }) {
 
       <form onSubmit={createBooking} className="mx-auto grid max-w-7xl gap-6 px-5 py-7 md:grid-cols-[1fr_380px] md:px-10 md:py-10">
         <section className="space-y-6">
-          {created && (
-            <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="rounded-lg border border-emerald-200 bg-emerald-50 p-5 text-sm text-emerald-950">
-              <div className="flex items-center gap-3">
-                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-600 text-white"><Check size={17} /></span>
-                <div>
-                  <p className="font-semibold">Hospedagem paga e confirmada: {created.confirmationCode}</p>
-                  <p className="mt-1 text-emerald-800">Total oficial: {BRL.format(created.total / 100)}. Conta liberada como hospede.</p>
-                </div>
-              </div>
-              <div className="mt-4 grid gap-2 md:grid-cols-3">
-                <MiniStep text="Pagamento mockado aprovado" />
-                <MiniStep text={created.emailStatus === 'sent' ? 'E-mail enviado' : created.emailStatus === 'failed' ? 'E-mail pendente de reenvio' : 'E-mail registrado no mock'} />
-                <MiniStep text="Portal do hospede liberado" />
-              </div>
-            </motion.div>
-          )}
-
           {error && (
             <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-900">
               {error}
@@ -247,8 +271,8 @@ export function BookingPortal({ onBack }: { onBack: () => void }) {
 
           <Panel title="Dados da reserva" icon={CalendarDays}>
             <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Check-in" icon={CalendarDays}><input type="date" value={checkIn} onChange={e => setCheckIn(e.target.value)} /></Field>
-              <Field label="Check-out" icon={CalendarDays}><input type="date" value={checkOut} onChange={e => setCheckOut(e.target.value)} /></Field>
+              <Field label="Check-in" icon={CalendarDays}><input type="date" min={new Date().toISOString().slice(0, 10)} value={checkIn} onChange={e => setCheckIn(e.target.value)} /></Field>
+              <Field label="Check-out" icon={CalendarDays}><input type="date" min={addDays(new Date(`${checkIn}T12:00:00`), 1)} value={checkOut} onChange={e => setCheckOut(e.target.value)} /></Field>
               <Field label="Hospedes" icon={Users}><input type="number" min={1} max={accommodation.capacity + mattress} value={guests} onChange={e => setGuests(Number(e.target.value))} /></Field>
             </div>
           </Panel>
@@ -355,6 +379,127 @@ function MiniStep({ text }: { text: string }) {
     <div className="flex items-center gap-2 rounded-lg bg-white/70 px-3 py-2">
       <Check size={14} className="text-emerald-700" />
       <span className="text-xs font-medium">{text}</span>
+    </div>
+  );
+}
+
+function BookingSuccess({
+  booking,
+  accommodation,
+  checkIn,
+  checkOut,
+  guests,
+  redirectCountdown,
+  onEnterPortal,
+  onNewBooking,
+}: {
+  booking: CreateBookingResult;
+  accommodation: AccommodationOption;
+  checkIn: string;
+  checkOut: string;
+  guests: number;
+  redirectCountdown: number;
+  onEnterPortal: () => void;
+  onNewBooking: () => void;
+}) {
+  const steps = [
+    'Pagamento mockado aprovado',
+    booking.emailStatus === 'sent' ? 'E-mail enviado' : booking.emailStatus === 'failed' ? 'E-mail pendente de reenvio' : 'E-mail registrado no mock',
+    'Portal do hospede liberado',
+  ];
+
+  return (
+    <main className="min-h-screen overflow-hidden bg-[#101815] text-white">
+      <section className="relative min-h-screen px-5 py-6 md:px-10">
+        <img src={accommodation.image} alt={accommodation.name} className="absolute inset-0 h-full w-full object-cover opacity-55" />
+        <div className="absolute inset-0 bg-gradient-to-b from-black/72 via-[#101815]/72 to-[#101815]" />
+        <div className="absolute inset-x-0 top-0 h-48 bg-gradient-to-b from-[#d7b98d]/18 to-transparent" />
+
+        <div className="relative z-10 mx-auto flex min-h-[calc(100vh-48px)] max-w-6xl flex-col justify-center">
+          <motion.div
+            initial={{ opacity: 0, y: 18, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+            className="grid overflow-hidden rounded-lg border border-white/12 bg-white/10 shadow-2xl backdrop-blur-xl md:grid-cols-[1.05fr_0.95fr]"
+          >
+            <div className="relative min-h-[360px] p-7 md:p-10">
+              <motion.div
+                initial={{ scale: 0.86, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ delay: 0.15, duration: 0.55 }}
+                className="mb-7 flex h-16 w-16 items-center justify-center rounded-full bg-[#d7b98d] text-[#15100b] shadow-xl shadow-black/30"
+              >
+                <Check size={30} />
+              </motion.div>
+
+              <p className="text-[11px] font-bold uppercase tracking-[0.34em] text-[#d7b98d]">Hospedagem confirmada</p>
+              <h1 className="mt-4 max-w-2xl font-serif text-5xl leading-[0.95] md:text-7xl">
+                Sua chegada ao Vale ja comecou.
+              </h1>
+              <p className="mt-5 max-w-xl text-sm leading-7 text-white/68">
+                A reserva foi paga, vinculada a sua conta e o portal do hospede sera aberto automaticamente.
+              </p>
+
+              <div className="mt-8 grid gap-3 sm:grid-cols-3">
+                {steps.map((step, index) => (
+                  <motion.div
+                    key={step}
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.25 + index * 0.14 }}
+                    className="rounded-lg border border-white/10 bg-white/8 p-3"
+                  >
+                    <Check size={16} className="mb-2 text-[#d7b98d]" />
+                    <p className="text-xs leading-5 text-white/72">{step}</p>
+                  </motion.div>
+                ))}
+              </div>
+            </div>
+
+            <aside className="border-t border-white/10 bg-[#f7f3ea] p-6 text-[#20140d] md:border-l md:border-t-0 md:p-8">
+              <div className="overflow-hidden rounded-lg">
+                <img src={accommodation.image} alt="" className="h-48 w-full object-cover" />
+              </div>
+              <div className="mt-5">
+                <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-[#8c6b42]">Codigo</p>
+                <h2 className="mt-1 font-mono text-2xl font-bold">{booking.confirmationCode}</h2>
+              </div>
+
+              <div className="mt-5 space-y-3 rounded-lg border border-black/8 bg-white/75 p-4 text-sm">
+                <SuccessRow icon={BedDouble} label="Acomodacao" value={accommodation.name} />
+                <SuccessRow icon={CalendarDays} label="Periodo" value={`${checkIn} ate ${checkOut}`} />
+                <SuccessRow icon={Users} label="Hospedes" value={`${guests} pessoa${guests > 1 ? 's' : ''}`} />
+                <SuccessRow icon={Wine} label="Total pago" value={BRL.format(booking.total / 100)} />
+              </div>
+
+              <div className="mt-6 flex flex-col gap-3">
+                <button onClick={onEnterPortal} className="rounded-lg bg-[#20140d] py-4 text-xs font-bold uppercase tracking-[0.22em] text-white transition hover:bg-[#3a2a1f]">
+                  Entrar no portal do hospede
+                </button>
+                <button onClick={onNewBooking} className="rounded-lg border border-black/10 py-3 text-xs font-bold uppercase tracking-[0.18em] text-black/55 transition hover:border-black/25">
+                  Fazer outra reserva
+                </button>
+              </div>
+
+              <p className="mt-4 text-center text-xs text-black/45">
+                Redirecionando em {redirectCountdown}s
+              </p>
+            </aside>
+          </motion.div>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function SuccessRow({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
+  return (
+    <div className="flex items-start gap-3">
+      <Icon size={16} className="mt-0.5 text-[#8c6b42]" />
+      <div>
+        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-black/35">{label}</p>
+        <p className="mt-0.5 font-medium">{value}</p>
+      </div>
     </div>
   );
 }

@@ -47,6 +47,12 @@ function daysBetween(start: string, end: string) {
   return Math.max(1, Math.round((new Date(`${end}T00:00:00Z`).getTime() - new Date(`${start}T00:00:00Z`).getTime()) / 86400000));
 }
 
+function decimal(value: unknown) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) throw new Error('Valor invalido.');
+  return Math.round(number * 100) / 100;
+}
+
 function assertOneOf(value: string, values: string[], message: string) {
   if (!values.includes(value)) throw new Error(message);
 }
@@ -109,6 +115,92 @@ async function invokeFinancial<T>(authHeader: string, action: string, payload: R
   const body = await response.json();
   if (!response.ok) throw new Error(body.error || 'Operacao financeira falhou.');
   return body.data as T;
+}
+
+async function recalculateFolio(supabase: ReturnType<typeof createClient>, folioId: string) {
+  const [itemsResult, paymentsResult] = await Promise.all([
+    supabase.from('fin_folio_items').select('centro_custo, valor_total').eq('folio_id', folioId),
+    supabase.from('fin_folio_payments').select('valor').eq('folio_id', folioId),
+  ]);
+  if (itemsResult.error) throw itemsResult.error;
+  if (paymentsResult.error) throw paymentsResult.error;
+
+  const totals = { hospedagem: 0, restaurante: 0, eventos: 0, servicos: 0 };
+  for (const item of itemsResult.data || []) {
+    totals[item.centro_custo as keyof typeof totals] += Number(item.valor_total || 0);
+  }
+  const totalPago = (paymentsResult.data || []).reduce((sum, payment) => sum + Number(payment.valor || 0), 0);
+
+  const { error } = await supabase
+    .from('fin_folios')
+    .update({
+      total_hospedagem: decimal(totals.hospedagem),
+      total_restaurante: decimal(totals.restaurante),
+      total_eventos: decimal(totals.eventos),
+      total_servicos: decimal(totals.servicos),
+      total_pago: decimal(totalPago),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', folioId);
+  if (error) throw error;
+}
+
+async function ensureCheckinFolio(supabase: ReturnType<typeof createClient>, userId: string, current: Record<string, any>, booking: Record<string, any>, guest: Record<string, any>) {
+  const { data: existing, error: existingError } = await supabase
+    .from('fin_folios')
+    .select('id, status')
+    .eq('reserva_id', current.booking_id)
+    .neq('status', 'cancelado')
+    .maybeSingle();
+  if (existingError) throw existingError;
+
+  let folioId = existing?.id as string | undefined;
+  if (!folioId) {
+    const { data: created, error: createError } = await supabase
+      .from('fin_folios')
+      .insert({
+        reserva_id: current.booking_id,
+        hospede_nome: guest.name,
+        hospede_email: guest.email,
+        quarto: current.quarto_numero,
+        checkin: current.checkin_previsto,
+        checkout: current.checkout_previsto,
+        status: 'aberto',
+        created_by: userId,
+      })
+      .select('id')
+      .single();
+    if (createError) throw createError;
+    folioId = created.id;
+  }
+
+  const { data: lodgingItem, error: itemLookupError } = await supabase
+    .from('fin_folio_items')
+    .select('id')
+    .eq('folio_id', folioId)
+    .eq('referencia_id', current.booking_id)
+    .eq('referencia_tipo', 'reserva')
+    .eq('centro_custo', 'hospedagem')
+    .maybeSingle();
+  if (itemLookupError) throw itemLookupError;
+
+  if (!lodgingItem) {
+    const nights = daysBetween(current.checkin_previsto, current.checkout_previsto);
+    const { error: itemError } = await supabase.from('fin_folio_items').insert({
+      folio_id: folioId,
+      centro_custo: 'hospedagem',
+      descricao: `Diaria - Quarto ${current.quarto_numero} (${current.hk_rooms.tipo})`,
+      quantidade: nights,
+      valor_unitario: decimal(Number(booking.lodging_total || 0) / 100 / Math.max(1, nights)),
+      referencia_id: current.booking_id,
+      referencia_tipo: 'reserva',
+      lancado_por: userId,
+    });
+    if (itemError) throw itemError;
+  }
+
+  await recalculateFolio(supabase, folioId);
+  return { id: folioId };
 }
 
 async function loadAssignments(supabase: ReturnType<typeof createClient>, filters: { data?: string; status?: string; start?: string; end?: string; search?: string } = {}) {
@@ -267,29 +359,15 @@ async function checkin(supabase: ReturnType<typeof createClient>, userId: string
   const assignmentId = String(payload.assignment_id || '');
   const { data: current, error } = await supabase.from('fd_room_assignments').select('*, hk_rooms(*), bookings(*, guests(*))').eq('id', assignmentId).single();
   if (error) throw error;
-  if (current.status !== 'reservado') throw new Error('A reserva precisa estar reservada para check-in.');
-  if (current.hk_rooms.status !== 'limpo') throw new Error('Quarto precisa estar limpo para check-in.');
+  if (current.status !== 'reservado') throw Object.assign(new Error('A reserva precisa estar reservada para check-in.'), { status: 409 });
+  if (current.hk_rooms.status !== 'limpo') {
+    throw Object.assign(new Error(`Quarto ${current.quarto_numero} esta ${current.hk_rooms.status}. Envie para limpeza ou reatribua para um quarto limpo antes do check-in.`), { status: 409 });
+  }
   if (current.checkin_previsto > today() && !canManage(role)) throw Object.assign(new Error('Check-in antecipado exige gestor.'), { status: 403 });
 
   const booking = first(current.bookings) || current.bookings;
   const guest = first(booking.guests) || booking.guests;
-  const folio = await invokeFinancial<{ id: string }>(authHeader, 'open_folio', {
-    reserva_id: current.booking_id,
-    hospede_nome: guest.name,
-    hospede_email: guest.email,
-    quarto: current.quarto_numero,
-    checkin: current.checkin_previsto,
-    checkout: current.checkout_previsto,
-  });
-  await invokeFinancial(authHeader, 'add_folio_item', {
-    folio_id: folio.id,
-    centro_custo: 'hospedagem',
-    descricao: `Diaria - Quarto ${current.quarto_numero} (${current.hk_rooms.tipo})`,
-    quantidade: daysBetween(current.checkin_previsto, current.checkout_previsto),
-    valor_unitario: Number(booking.lodging_total || 0) / 100 / Math.max(1, daysBetween(current.checkin_previsto, current.checkout_previsto)),
-    referencia_id: current.booking_id,
-    referencia_tipo: 'reserva',
-  });
+  const folio = await ensureCheckinFolio(supabase, userId, current, booking, guest);
 
   await supabase.from('fd_room_assignments').update({ status: 'checked_in', checkin_real: new Date().toISOString(), folio_id: folio.id, updated_at: new Date().toISOString() }).eq('id', assignmentId);
   await supabase.from('bookings').update({ status: 'checked_in', updated_at: new Date().toISOString() }).eq('id', current.booking_id);

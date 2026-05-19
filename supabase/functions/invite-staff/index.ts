@@ -41,10 +41,6 @@ function cleanPhone(phone: string) {
   return phone.replace(/[^\d+]/g, '');
 }
 
-function randomPassword() {
-  return `${crypto.randomUUID().replace(/-/g, '').slice(0, 14)}A!`;
-}
-
 function sanitizePermissions(role: StaffRole, permissions: Record<string, boolean>) {
   if (role === 'admin') return ROLE_PERMISSIONS.admin;
 
@@ -81,12 +77,15 @@ Deno.serve(async req => {
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('SERVICE_ROLE_KEY');
     if (!supabaseUrl || !serviceRoleKey) return json({ error: 'Backend sem configuracao do Supabase.' }, 500);
 
-    const supabase = createClient(supabaseUrl, serviceRoleKey, {
+    // global.headers.Authorization precisa ser explicitamente a service_role key
+    // para que auth.admin.* (inviteUserByEmail, updateUserById…) sejam autorizados.
+    // getUser(jwt) sobrescreve o Authorization apenas naquela chamada com o JWT do usuario.
+    const admin = createClient(supabaseUrl, serviceRoleKey, {
       auth: { persistSession: false, autoRefreshToken: false },
-      global: { headers: { Authorization: authHeader } },
+      global: { headers: { Authorization: `Bearer ${serviceRoleKey}` } },
     });
 
-    const { data: requester } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
+    const { data: requester } = await admin.auth.getUser(authHeader.replace('Bearer ', ''));
     const requesterRole = requester.user?.app_metadata?.role;
     if (!requester.user || !['master', 'admin'].includes(String(requesterRole))) {
       return json({ error: 'Acesso restrito ao usuario master ou administrador.' }, 403);
@@ -97,31 +96,28 @@ Deno.serve(async req => {
     }
 
     const permissions = sanitizePermissions(role, payload.permissions || {});
-    const password = randomPassword();
 
-    const { data: invited, error: createError } = await supabase.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true,
-      phone,
-      user_metadata: {
-        full_name: fullName,
-        phone,
-      },
-      app_metadata: {
-        role,
-        permissions,
-      },
+    const { data: invited, error: inviteError } = await admin.auth.admin.inviteUserByEmail(email, {
+      data: { full_name: fullName, phone },
     });
 
-    if (createError) {
-      const duplicated = createError.message.toLowerCase().includes('already') || createError.status === 422;
-      return json({ error: duplicated ? 'Ja existe um usuario cadastrado com este e-mail.' : createError.message }, duplicated ? 409 : 400);
+    if (inviteError) {
+      const duplicated = inviteError.message.toLowerCase().includes('already') || inviteError.status === 422;
+      return json({ error: duplicated ? 'Ja existe um usuario cadastrado com este e-mail.' : inviteError.message }, duplicated ? 409 : 400);
     }
 
     if (!invited.user) return json({ error: 'Nao foi possivel convidar o usuario.' }, 500);
 
-    const { error: profileError } = await supabase.from('profiles').upsert({
+    const { error: updateError } = await admin.auth.admin.updateUserById(invited.user.id, {
+      app_metadata: { role, permissions },
+    });
+
+    if (updateError) {
+      await admin.auth.admin.deleteUser(invited.user.id);
+      throw updateError;
+    }
+
+    const { error: profileError } = await admin.from('profiles').upsert({
       id: invited.user.id,
       email,
       full_name: fullName,
@@ -132,7 +128,7 @@ Deno.serve(async req => {
     });
 
     if (profileError) {
-      await supabase.auth.admin.deleteUser(invited.user.id);
+      await admin.auth.admin.deleteUser(invited.user.id);
       throw profileError;
     }
 
@@ -142,7 +138,6 @@ Deno.serve(async req => {
         email,
         role,
         permissions,
-        temporaryPassword: password,
       },
     }, 201);
   } catch (error) {
