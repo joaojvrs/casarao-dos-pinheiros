@@ -27,6 +27,12 @@ export interface CreateBookingInput {
   };
   extras: BookingExtraInput[];
   experiences: string[];
+  payment: {
+    method: 'pix' | 'credit_card';
+    holderName?: string;
+    lastFour?: string;
+    installments?: number;
+  };
   notes: string;
 }
 
@@ -36,4 +42,7 @@ export interface CreateBookingResult {
   status: 'pending' | 'confirmed';
   nights: number;
   total: number;
+  paymentStatus: 'paid';
+  paymentMethod: 'pix' | 'credit_card';
+  emailStatus: 'sent' | 'mocked' | 'failed';
 }

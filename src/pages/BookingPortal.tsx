@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import {
   ArrowLeft,
@@ -10,6 +10,7 @@ import {
   ConciergeBell,
   CreditCard,
   IdCard,
+  LogIn,
   Mail,
   MapPin,
   Minus,
@@ -20,6 +21,8 @@ import {
   Users,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 import { createBooking as persistBooking } from '../services/bookings';
 import type { AccommodationOption, BookingExtraInput, CreateBookingResult } from '../types/booking';
 
@@ -61,6 +64,9 @@ function addDays(date: Date, days: number) {
 }
 
 export function BookingPortal({ onBack }: { onBack: () => void }) {
+  const auth = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
   const today = useMemo(() => new Date(), []);
   const [accommodation, setAccommodation] = useState(ACCOMMODATIONS[0]);
   const [checkIn, setCheckIn] = useState(addDays(today, 7));
@@ -74,6 +80,10 @@ export function BookingPortal({ onBack }: { onBack: () => void }) {
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [notes, setNotes] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<'pix' | 'credit_card'>('pix');
+  const [cardHolder, setCardHolder] = useState('');
+  const [cardLastFour, setCardLastFour] = useState('');
+  const [installments, setInstallments] = useState(1);
   const [created, setCreated] = useState<CreateBookingResult | null>(null);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -83,6 +93,15 @@ export function BookingPortal({ onBack }: { onBack: () => void }) {
   const experienceTotal = selectedExperiences.length * 160;
   const subtotal = accommodation.rate * nights;
   const total = subtotal + extrasTotal + experienceTotal;
+  const accountEmail = auth.user?.email || '';
+  const canBook = auth.authenticated && !auth.loading;
+
+  useEffect(() => {
+    if (!auth.user) return;
+    setEmail(auth.user.email || '');
+    setGuestName(String(auth.user.user_metadata?.full_name || ''));
+    setPhone(String(auth.user.user_metadata?.phone || ''));
+  }, [auth.user]);
 
   const toggleExperience = (item: string) => {
     setSelectedExperiences(prev => prev.includes(item) ? prev.filter(i => i !== item) : [...prev, item]);
@@ -92,6 +111,18 @@ export function BookingPortal({ onBack }: { onBack: () => void }) {
     event.preventDefault();
     setError('');
     setCreated(null);
+
+    if (!canBook) {
+      navigate('/login', { state: { from: location.pathname } });
+      return;
+    }
+
+    if (paymentMethod === 'credit_card' && !/^\d{4}$/.test(cardLastFour)) {
+      setError('Informe os 4 ultimos digitos do cartao para concluir o pagamento mockado.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
     setSubmitting(true);
 
     try {
@@ -105,12 +136,19 @@ export function BookingPortal({ onBack }: { onBack: () => void }) {
         checkIn,
         checkOut,
         guestsCount: guests,
-        guest: { name: guestName, cpf, phone, email },
+        guest: { name: guestName, cpf, phone, email: accountEmail },
         extras,
         experiences: selectedExperiences,
+        payment: {
+          method: paymentMethod,
+          holderName: cardHolder,
+          lastFour: cardLastFour,
+          installments,
+        },
         notes,
       });
       setCreated(booking);
+      await auth.refreshAccess();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Nao foi possivel criar a hospedagem.');
@@ -144,15 +182,40 @@ export function BookingPortal({ onBack }: { onBack: () => void }) {
       <form onSubmit={createBooking} className="mx-auto grid max-w-7xl gap-6 px-5 py-7 md:grid-cols-[1fr_380px] md:px-10 md:py-10">
         <section className="space-y-6">
           {created && (
-            <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="flex items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
-              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-600 text-white"><Check size={17} /></span>
-              Hospedagem confirmada no banco: {created.confirmationCode}. Total oficial: {BRL.format(created.total / 100)}.
+            <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="rounded-lg border border-emerald-200 bg-emerald-50 p-5 text-sm text-emerald-950">
+              <div className="flex items-center gap-3">
+                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-600 text-white"><Check size={17} /></span>
+                <div>
+                  <p className="font-semibold">Hospedagem paga e confirmada: {created.confirmationCode}</p>
+                  <p className="mt-1 text-emerald-800">Total oficial: {BRL.format(created.total / 100)}. Conta liberada como hospede.</p>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-2 md:grid-cols-3">
+                <MiniStep text="Pagamento mockado aprovado" />
+                <MiniStep text={created.emailStatus === 'sent' ? 'E-mail enviado' : created.emailStatus === 'failed' ? 'E-mail pendente de reenvio' : 'E-mail registrado no mock'} />
+                <MiniStep text="Portal do hospede liberado" />
+              </div>
             </motion.div>
           )}
 
           {error && (
             <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-900">
               {error}
+            </motion.div>
+          )}
+
+          {!canBook && (
+            <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="rounded-lg border border-amber-200 bg-amber-50 p-5 text-sm text-amber-950">
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p className="font-semibold">Entre na sua conta antes de finalizar.</p>
+                  <p className="mt-1 text-amber-800">A hospedagem agora fica vinculada ao seu login. Depois do pagamento mockado, sua conta vira hospede automaticamente.</p>
+                </div>
+                <button type="button" onClick={() => navigate('/login', { state: { from: location.pathname } })} className="flex items-center justify-center gap-2 rounded-lg bg-[#20140d] px-5 py-3 text-xs font-bold uppercase tracking-[0.18em] text-white">
+                  <LogIn size={15} />
+                  Entrar
+                </button>
+              </div>
             </motion.div>
           )}
 
@@ -195,7 +258,7 @@ export function BookingPortal({ onBack }: { onBack: () => void }) {
               <Field label="Nome" icon={Users}><input value={guestName} onChange={e => setGuestName(e.target.value)} /></Field>
               <Field label="CPF" icon={IdCard}><input value={cpf} onChange={e => setCpf(e.target.value)} placeholder="000.000.000-00" /></Field>
               <Field label="Telefone" icon={Phone}><input value={phone} onChange={e => setPhone(e.target.value)} /></Field>
-              <Field label="E-mail" icon={Mail}><input type="email" value={email} onChange={e => setEmail(e.target.value)} /></Field>
+              <Field label="E-mail da conta" icon={Mail}><input type="email" value={accountEmail || email} readOnly /></Field>
             </div>
           </Panel>
 
@@ -220,6 +283,32 @@ export function BookingPortal({ onBack }: { onBack: () => void }) {
               <span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.24em] text-black/35">Observacoes internas</span>
               <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={4} className="w-full resize-none rounded-lg border border-black/10 bg-white px-4 py-3 text-sm outline-none transition focus:border-[#9d7a4f]" />
             </label>
+          </Panel>
+
+          <Panel title="Pagamento mockado" icon={CreditCard}>
+            <div className="grid gap-3 md:grid-cols-2">
+              <button type="button" onClick={() => setPaymentMethod('pix')} className={`rounded-lg border p-4 text-left transition ${paymentMethod === 'pix' ? 'border-[#3a6b4a] bg-emerald-50' : 'border-black/10 bg-white hover:border-[#c3a37a]'}`}>
+                <p className="text-sm font-semibold">PIX aprovado na hora</p>
+                <p className="mt-1 text-xs leading-5 text-black/50">Gera uma chave demonstrativa e confirma a hospedagem sem gateway real.</p>
+              </button>
+              <button type="button" onClick={() => setPaymentMethod('credit_card')} className={`rounded-lg border p-4 text-left transition ${paymentMethod === 'credit_card' ? 'border-[#3a6b4a] bg-emerald-50' : 'border-black/10 bg-white hover:border-[#c3a37a]'}`}>
+                <p className="text-sm font-semibold">Cartao de credito mockado</p>
+                <p className="mt-1 text-xs leading-5 text-black/50">Valida somente os dados basicos e registra pagamento aprovado.</p>
+              </button>
+            </div>
+
+            {paymentMethod === 'pix' ? (
+              <div className="mt-4 rounded-lg border border-black/8 bg-[#faf7f0] p-4">
+                <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-black/35">Chave PIX demonstrativa</p>
+                <p className="mt-2 font-mono text-sm text-black/65">pix.mock.casarao.{accommodation.id}.{checkIn}</p>
+              </div>
+            ) : (
+              <div className="mt-4 grid gap-4 md:grid-cols-3">
+                <Field label="Nome no cartao" icon={Users}><input value={cardHolder} onChange={e => setCardHolder(e.target.value)} /></Field>
+                <Field label="Ultimos 4 digitos" icon={CreditCard}><input value={cardLastFour} onChange={e => setCardLastFour(e.target.value.replace(/\D/g, '').slice(0, 4))} inputMode="numeric" placeholder="1234" /></Field>
+                <Field label="Parcelas" icon={CreditCard}><input type="number" min={1} max={6} value={installments} onChange={e => setInstallments(Math.min(6, Math.max(1, Number(e.target.value))))} /></Field>
+              </div>
+            )}
           </Panel>
         </section>
 
@@ -249,14 +338,24 @@ export function BookingPortal({ onBack }: { onBack: () => void }) {
               <span className="text-sm text-white/55">Total previsto</span>
               <strong className="font-serif text-3xl font-normal">{BRL.format(total)}</strong>
             </div>
-            <button type="submit" disabled={submitting} className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg bg-[#d7b98d] py-4 text-xs font-bold uppercase tracking-[0.22em] text-[#15100b] transition hover:bg-[#e4caa4] disabled:cursor-not-allowed disabled:opacity-60">
+            <button type="submit" disabled={submitting || auth.loading} className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg bg-[#d7b98d] py-4 text-xs font-bold uppercase tracking-[0.22em] text-[#15100b] transition hover:bg-[#e4caa4] disabled:cursor-not-allowed disabled:opacity-60">
               <CreditCard size={16} />
-              {submitting ? 'Validando...' : 'Gerar agendamento'}
+              {!canBook ? 'Entrar para reservar' : submitting ? 'Processando...' : `Pagar com ${paymentMethod === 'pix' ? 'PIX' : 'cartao'}`}
             </button>
+            <p className="mt-3 text-xs leading-5 text-white/42">Pagamento temporariamente mockado. A confirmacao libera o Portal do Hospede e registra o e-mail de instrucoes.</p>
           </div>
         </aside>
       </form>
     </main>
+  );
+}
+
+function MiniStep({ text }: { text: string }) {
+  return (
+    <div className="flex items-center gap-2 rounded-lg bg-white/70 px-3 py-2">
+      <Check size={14} className="text-emerald-700" />
+      <span className="text-xs font-medium">{text}</span>
+    </div>
   );
 }
 

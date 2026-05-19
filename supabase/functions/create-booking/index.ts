@@ -26,8 +26,16 @@ interface BookingRequest {
     unitPrice: number;
   }>;
   experiences: string[];
+  payment: {
+    method: 'pix' | 'credit_card';
+    holderName?: string;
+    lastFour?: string;
+    installments?: number;
+  };
   notes?: string;
 }
+
+type EmailStatus = 'sent' | 'mocked' | 'failed';
 
 const EXTRA_PRICES: Record<ExtraCode, { name: string; unitPrice: number; max: number }> = {
   extra_mattress: { name: 'Adicional de colchao', unitPrice: 12000, max: 3 },
@@ -73,6 +81,92 @@ function confirmationCode() {
   return `VDE-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
 }
 
+function formatBRLCents(value: number) {
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value / 100);
+}
+
+async function getAuthenticatedUser(req: Request, supabase: ReturnType<typeof createClient>) {
+  const authHeader = req.headers.get('Authorization') || '';
+  const token = authHeader.replace('Bearer ', '');
+  if (!token) return null;
+  const { data, error } = await supabase.auth.getUser(token);
+  if (error || !data.user) return null;
+  return data.user;
+}
+
+async function sendInstructionsEmail(supabase: ReturnType<typeof createClient>, input: {
+  bookingId: string;
+  recipient: string;
+  guestName: string;
+  confirmationCode: string;
+  checkIn: string;
+  checkOut: string;
+  accommodationName: string;
+  total: number;
+  paymentMethod: string;
+}) {
+  const subject = `Sua hospedagem no Vale do Eden - ${input.confirmationCode}`;
+  const body = [
+    `Ola, ${input.guestName}.`,
+    '',
+    `Sua hospedagem foi confirmada com pagamento aprovado.`,
+    `Codigo: ${input.confirmationCode}`,
+    `Acomodacao: ${input.accommodationName}`,
+    `Periodo: ${input.checkIn} ate ${input.checkOut}`,
+    `Total pago: ${formatBRLCents(input.total)}`,
+    `Metodo: ${input.paymentMethod === 'pix' ? 'PIX' : 'Cartao de credito'}`,
+    '',
+    'Proximos passos:',
+    '1. Acesse sua conta no site e entre no Portal do Hospede.',
+    '2. Leve documento com foto no check-in.',
+    '3. A recepcao fara a atribuicao do quarto e emitira a chave na chegada.',
+    '4. Pedidos, frigobar, experiencias e concierge ficam disponiveis no Portal do Hospede.',
+    '',
+    'Equipe Casarao Vale do Eden',
+  ].join('\n');
+
+  let status: EmailStatus = 'mocked';
+  let provider = 'mock';
+  let providerMessageId: string | null = null;
+  let errorMessage: string | null = null;
+
+  const resendKey = Deno.env.get('RESEND_API_KEY');
+  const from = Deno.env.get('BOOKING_EMAIL_FROM') || 'Casarao Vale do Eden <reservas@valeeden.com.br>';
+  if (resendKey) {
+    provider = 'resend';
+    try {
+      const response = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${resendKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ from, to: input.recipient, subject, text: body }),
+      });
+      const responseBody = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(responseBody?.message || 'Falha ao enviar email.');
+      status = 'sent';
+      providerMessageId = responseBody?.id || null;
+    } catch (error) {
+      status = 'failed';
+      errorMessage = error instanceof Error ? error.message : 'Falha ao enviar email.';
+    }
+  }
+
+  await supabase.from('booking_email_outbox').insert({
+    booking_id: input.bookingId,
+    recipient: input.recipient,
+    subject,
+    body,
+    provider,
+    status,
+    provider_message_id: providerMessageId,
+    error: errorMessage,
+  });
+
+  return status;
+}
+
 Deno.serve(async req => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (req.method !== 'POST') return json({ error: 'Metodo nao permitido.' }, 405);
@@ -99,6 +193,12 @@ Deno.serve(async req => {
     const supabase = createClient(supabaseUrl, serviceRoleKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
+
+    const user = await getAuthenticatedUser(req, supabase);
+    if (!user?.email) return json({ error: 'Entre na sua conta para finalizar a hospedagem.' }, 401);
+    if (user.email.toLowerCase() !== payload.guest.email.trim().toLowerCase()) {
+      return json({ error: 'A hospedagem precisa usar o e-mail da conta autenticada.' }, 403);
+    }
 
     const { data: accommodation, error: accommodationError } = await supabase
       .from('accommodations')
@@ -144,6 +244,11 @@ Deno.serve(async req => {
     const extrasTotal = safeExtras.reduce((sum, extra) => sum + extra.quantity * extra.unit_price, 0);
     const experiencesTotal = experiences.length * EXPERIENCE_UNIT_PRICE;
     const total = lodgingTotal + extrasTotal + experiencesTotal;
+    const paymentMethod = payload.payment?.method;
+    if (!['pix', 'credit_card'].includes(paymentMethod)) return json({ error: 'Escolha PIX ou cartao de credito.' }, 400);
+    if (paymentMethod === 'credit_card' && !/^\d{4}$/.test(String(payload.payment?.lastFour || ''))) {
+      return json({ error: 'Informe os 4 ultimos digitos do cartao para o pagamento mockado.' }, 400);
+    }
 
     const { data: booking, error: bookingError } = await supabase.rpc('create_booking_atomic', {
       p_guest: {
@@ -182,13 +287,47 @@ Deno.serve(async req => {
         permissions: {},
         updated_at: new Date().toISOString(),
       })
-      .eq('email', guestEmail)
-      .eq('role', 'visitor');
+      .eq('id', user.id)
+      .in('role', ['visitor', 'guest']);
 
     if (profileRoleError) throw profileRoleError;
 
+    await supabase.auth.admin.updateUserById(user.id, {
+      app_metadata: { ...(user.app_metadata || {}), role: 'guest', permissions: {} },
+      user_metadata: { ...(user.user_metadata || {}), role: 'guest' },
+    });
+
+    await supabase.from('audit_logs').insert({
+      entity: 'bookings',
+      entity_id: booking.bookingId,
+      action: 'mock_payment_approved',
+      metadata: {
+        method: paymentMethod,
+        amount: total,
+        installments: payload.payment?.installments || 1,
+        last_four: paymentMethod === 'credit_card' ? payload.payment?.lastFour : null,
+      },
+    });
+
+    const emailStatus = await sendInstructionsEmail(supabase, {
+      bookingId: booking.bookingId,
+      recipient: guestEmail,
+      guestName: payload.guest.name.trim(),
+      confirmationCode: booking.confirmationCode,
+      checkIn: payload.checkIn,
+      checkOut: payload.checkOut,
+      accommodationName: accommodation.name,
+      total,
+      paymentMethod,
+    });
+
     return json({
-      booking,
+      booking: {
+        ...booking,
+        paymentStatus: 'paid',
+        paymentMethod,
+        emailStatus,
+      },
     }, 201);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Erro inesperado ao criar hospedagem.';
