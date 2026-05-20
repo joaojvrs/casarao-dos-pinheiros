@@ -16,7 +16,7 @@ import {
   getGarconMenu,
   openRestaurantTab,
 } from '../services/restaurant';
-import type { GarconMenu, RestaurantProduct, RestaurantTab } from '../types/restaurant';
+import type { ActiveRestaurantRoom, GarconMenu, RestaurantProduct, RestaurantTab } from '../types/restaurant';
 
 type Cart = Record<string, number>;
 
@@ -32,6 +32,14 @@ function categoryOf(p: RestaurantProduct): string {
 function tableLabel(tab: RestaurantTab): string {
   const table = Array.isArray(tab.restaurant_tables) ? tab.restaurant_tables[0] : tab.restaurant_tables;
   return table ? `${table.code} — ${table.location || ''}` : tab.code;
+}
+
+function roomTableCode(roomNumber: string) {
+  return `UH-${roomNumber}`.toUpperCase();
+}
+
+function roomTabLabel(room: ActiveRestaurantRoom) {
+  return `Quarto ${room.room_number} · ${room.guest_name}`;
 }
 
 export function GarcomPortal({ onBack }: { onBack: () => void }) {
@@ -50,6 +58,7 @@ export function GarcomPortal({ onBack }: { onBack: () => void }) {
   const [confirmed, setConfirmed] = useState('');
   const [tabPickerOpen, setTabPickerOpen] = useState(false);
   const [creatingTab, setCreatingTab] = useState(false);
+  const [openingRoomId, setOpeningRoomId] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -69,6 +78,7 @@ export function GarcomPortal({ onBack }: { onBack: () => void }) {
 
   const products = menu?.products || [];
   const tabs = menu?.tabs || [];
+  const activeRooms = menu?.activeRooms || [];
 
   const categories = useMemo(
     () => [...new Set(products.map(categoryOf))].sort(),
@@ -112,6 +122,18 @@ export function GarcomPortal({ onBack }: { onBack: () => void }) {
     setCart(c => ({ ...c, [id]: Math.max(0, (c[id] || 0) + delta) }));
 
   const selectedTab = tabs.find(t => t.id === selectedTabId);
+  const activeRoomTabs = useMemo(() => {
+    return activeRooms.map(room => {
+      const code = roomTableCode(room.room_number);
+      const tab = tabs.find(item => item.booking_id === room.booking_id || item.code === code || tableLabel(item).toUpperCase().includes(code));
+      return { room, tab };
+    });
+  }, [activeRooms, tabs]);
+
+  const otherTabs = useMemo(
+    () => tabs.filter(tab => !activeRoomTabs.some(item => item.tab?.id === tab.id)),
+    [tabs, activeRoomTabs],
+  );
 
   const handleOpenNewTab = async () => {
     if (!newTableCode.trim()) return;
@@ -127,6 +149,30 @@ export function GarcomPortal({ onBack }: { onBack: () => void }) {
       setError(err instanceof Error ? err.message : 'Erro ao abrir comanda.');
     } finally {
       setCreatingTab(false);
+    }
+  };
+
+  const handleSelectRoom = async (room: ActiveRestaurantRoom, existingTab?: RestaurantTab) => {
+    if (existingTab) {
+      setSelectedTabId(existingTab.id);
+      setTabPickerOpen(false);
+      return;
+    }
+    setOpeningRoomId(room.assignment_id);
+    setError('');
+    try {
+      const result = await openRestaurantTab({
+        tableCode: roomTableCode(room.room_number),
+        location: roomTabLabel(room),
+        bookingId: room.booking_id,
+      });
+      await load();
+      setSelectedTabId(result.id);
+      setTabPickerOpen(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao abrir comanda do quarto.');
+    } finally {
+      setOpeningRoomId('');
     }
   };
 
@@ -165,7 +211,7 @@ export function GarcomPortal({ onBack }: { onBack: () => void }) {
           <div className="w-9" />
         </div>
 
-        {/* Tab selector */}
+        {/* Destination selector */}
         <div className="mt-3 relative">
           <button
             onClick={() => setTabPickerOpen(o => !o)}
@@ -174,7 +220,7 @@ export function GarcomPortal({ onBack }: { onBack: () => void }) {
             <div className="flex items-center gap-2 min-w-0">
               <UtensilsCrossed size={14} className="text-[#c3a37a] shrink-0" />
               <span className="truncate">
-                {selectedTab ? tableLabel(selectedTab) : 'Selecionar comanda / mesa'}
+                {selectedTab ? tableLabel(selectedTab) : 'Selecionar quarto / comanda'}
               </span>
             </div>
             <ChevronDown size={14} className={`shrink-0 transition-transform ${tabPickerOpen ? 'rotate-180' : ''}`} />
@@ -182,20 +228,35 @@ export function GarcomPortal({ onBack }: { onBack: () => void }) {
 
           {tabPickerOpen && (
             <div className="absolute left-0 right-0 top-full mt-1 z-50 rounded-xl border border-black/10 bg-white shadow-xl overflow-hidden">
-              {tabs.map(tab => (
-                <button key={tab.id} onClick={() => { setSelectedTabId(tab.id); setTabPickerOpen(false); }}
-                  className={`flex w-full items-center justify-between px-4 py-3 text-left text-sm border-b border-black/6 last:border-b-0 hover:bg-[#f4efe6] transition ${selectedTabId === tab.id ? 'bg-[#f4efe6] font-semibold' : ''}`}>
-                  <span>{tableLabel(tab)}</span>
-                  <span className="text-xs text-black/40">{cents(tab.total)}</span>
-                </button>
-              ))}
+              <div className="max-h-72 overflow-y-auto">
+                <p className="px-4 pt-3 text-[10px] font-bold uppercase tracking-widest text-black/35">Quartos com check-in ativo</p>
+                {activeRoomTabs.length === 0 && <p className="px-4 py-3 text-xs text-black/40">Nenhum check-in ativo encontrado.</p>}
+                {activeRoomTabs.map(({ room, tab }) => (
+                  <button key={room.assignment_id} onClick={() => handleSelectRoom(room, tab)}
+                    className={`flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm border-b border-black/6 hover:bg-[#f4efe6] transition ${selectedTabId === tab?.id ? 'bg-[#f4efe6] font-semibold' : ''}`}>
+                    <span className="min-w-0">
+                      <span className="block truncate font-semibold">Quarto {room.room_number}</span>
+                      <span className="block truncate text-xs text-black/45">{room.guest_name} · checkout {new Date(`${room.checkout_previsto}T00:00:00`).toLocaleDateString('pt-BR')}</span>
+                    </span>
+                    <span className="shrink-0 text-xs font-bold text-black/55">{tab ? cents(tab.total) : 'Abrir'}</span>
+                  </button>
+                ))}
+                {otherTabs.length > 0 && <p className="px-4 pt-3 text-[10px] font-bold uppercase tracking-widest text-black/35">Outras comandas</p>}
+                {otherTabs.map(tab => (
+                  <button key={tab.id} onClick={() => { setSelectedTabId(tab.id); setTabPickerOpen(false); }}
+                    className={`flex w-full items-center justify-between px-4 py-3 text-left text-sm border-b border-black/6 last:border-b-0 hover:bg-[#f4efe6] transition ${selectedTabId === tab.id ? 'bg-[#f4efe6] font-semibold' : ''}`}>
+                    <span>{tableLabel(tab)}</span>
+                    <span className="text-xs text-black/40">{cents(tab.total)}</span>
+                  </button>
+                ))}
+              </div>
               <div className="border-t border-black/8 p-3 space-y-2">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-black/35">Nova comanda</p>
-                <div className="flex gap-2">
-                  <input value={newTableCode} onChange={e => setNewTableCode(e.target.value)} placeholder="Código (ex: DECK-03)"
-                    className="h-9 flex-1 rounded-lg border border-black/10 px-2 text-xs outline-none focus:border-[#c3a37a]" />
-                  <input value={newLocation} onChange={e => setNewLocation(e.target.value)} placeholder="Local (opcional)"
-                    className="h-9 flex-1 rounded-lg border border-black/10 px-2 text-xs outline-none focus:border-[#c3a37a]" />
+                <p className="text-[10px] font-bold uppercase tracking-widest text-black/35">Nova comanda avulsa</p>
+                <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+                  <input value={newTableCode} onChange={e => setNewTableCode(e.target.value)} placeholder="Mesa/local (ex: DECK-03)"
+                    className="h-9 rounded-lg border border-black/10 px-2 text-xs outline-none focus:border-[#c3a37a]" />
+                  <input value={newLocation} onChange={e => setNewLocation(e.target.value)} placeholder="Descrição"
+                    className="h-9 rounded-lg border border-black/10 px-2 text-xs outline-none focus:border-[#c3a37a]" />
                   <button onClick={handleOpenNewTab} disabled={creatingTab || !newTableCode.trim()}
                     className="h-9 rounded-lg bg-[#1a0f0a] px-3 text-xs font-bold text-white disabled:opacity-40">
                     {creatingTab ? '...' : 'Abrir'}
@@ -208,6 +269,51 @@ export function GarcomPortal({ onBack }: { onBack: () => void }) {
       </header>
 
       <div className="px-4 pt-4 space-y-4">
+        <section className="rounded-2xl border border-black/8 bg-white p-4 shadow-sm">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-black/35">Quartos ativos</p>
+              <h2 className="font-serif text-2xl">Pedidos por quarto</h2>
+            </div>
+            <span className="rounded-full bg-[#f4efe6] px-3 py-1 text-xs font-bold text-black/55">{activeRooms.length} check-in{activeRooms.length !== 1 ? 's' : ''}</span>
+          </div>
+
+          {loading ? (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {Array.from({ length: 2 }, (_, i) => <div key={i} className="h-24 animate-pulse rounded-xl bg-black/5" />)}
+            </div>
+          ) : activeRoomTabs.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-black/12 bg-[#f4efe6]/60 p-4 text-sm text-black/45">
+              Nenhum quarto com check-in ativo. Use uma comanda avulsa para mesas, deck ou balcão.
+            </div>
+          ) : (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {activeRoomTabs.map(({ room, tab }) => (
+                <button key={room.assignment_id} onClick={() => handleSelectRoom(room, tab)}
+                  className={`rounded-xl border p-3 text-left transition hover:-translate-y-0.5 hover:shadow-md ${selectedTabId === tab?.id ? 'border-[#1a0f0a] bg-[#f4efe6]' : 'border-black/8 bg-white'}`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-lg font-bold leading-tight">Quarto {room.room_number}</p>
+                      <p className="mt-1 truncate text-xs text-black/55">{room.guest_name}</p>
+                    </div>
+                    <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${tab ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+                      {tab ? 'Comanda aberta' : 'Abrir comanda'}
+                    </span>
+                  </div>
+                  <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                    <Mini label="Conta" value={tab ? cents(tab.total) : cents(0)} />
+                    <Mini label="Pessoas" value={String(Number(room.adults || 0) + Number(room.children || 0))} />
+                    <Mini label="Saída" value={new Date(`${room.checkout_previsto}T00:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} />
+                  </div>
+                  {openingRoomId === room.assignment_id && (
+                    <p className="mt-2 flex items-center gap-1 text-xs font-semibold text-[#3a6b4a]"><Loader2 size={12} className="animate-spin" /> Abrindo comanda...</p>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+        </section>
+
         {/* Alerts */}
         {error && (
           <div className="flex items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
@@ -382,6 +488,15 @@ export function GarcomPortal({ onBack }: { onBack: () => void }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function Mini({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg bg-[#f4efe6] px-2 py-1.5">
+      <p className="truncate text-xs font-bold text-[#1a0f0a]">{value}</p>
+      <p className="mt-0.5 text-[9px] uppercase tracking-wide text-black/35">{label}</p>
     </div>
   );
 }

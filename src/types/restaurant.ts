@@ -30,6 +30,19 @@ export interface MenuProduct {
 export interface GarconMenu {
   products: RestaurantProduct[];
   tabs: RestaurantTab[];
+  activeRooms: ActiveRestaurantRoom[];
+}
+
+export interface ActiveRestaurantRoom {
+  assignment_id: string;
+  booking_id: string;
+  room_number: string;
+  guest_name: string;
+  guest_phone: string | null;
+  checkin_real: string | null;
+  checkout_previsto: string;
+  adults: number;
+  children: number;
 }
 
 export interface RestaurantOrderItem {
@@ -58,6 +71,7 @@ export interface RestaurantOrder {
 export interface RestaurantTab {
   id: string;
   code: string;
+  booking_id?: string | null;
   status: RestaurantTabStatus;
   subtotal: number;
   discount: number;

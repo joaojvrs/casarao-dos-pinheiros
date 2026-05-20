@@ -402,13 +402,16 @@ export const Accommodations: React.FC<{ onBookingClick?: () => void }> = ({ onBo
   const [currentPanel, setCurrentPanel] = useState(0);
   const panelRef = useRef(0);
   const animatingRef = useRef(false);
-  const lastWheelTime = useRef(0);
+  const lastWheelTimeFwd = useRef(0);
+  const lastWheelTimeBack = useRef(0);
 
   const TRANSITION_MS = 1100;
+  const BACK_COOLDOWN_MS = 400;
 
   const totalPanels = CABINS.length + 1;
 
   const goToPanel = useCallback((index: number) => {
+    const duration = TRANSITION_MS / 1000;
     const clamped = Math.max(0, Math.min(totalPanels - 1, index));
     if (clamped === panelRef.current) return;
 
@@ -419,32 +422,44 @@ export const Accommodations: React.FC<{ onBookingClick?: () => void }> = ({ onBo
     gsap.killTweensOf(slider.current.querySelectorAll('.panel'));
     gsap.to(slider.current.querySelectorAll('.panel'), {
       xPercent: -100 * clamped,
-      duration: TRANSITION_MS / 1000,
+      duration,
       ease: 'power3.inOut',
       onComplete: () => { animatingRef.current = false; },
     });
   }, [totalPanels]);
 
-  // Wheel: one scroll notch = one panel transition
-  // Timestamp cooldown prevents double-skip from rapid wheel events on trackpads
+  // Wheel: always preventDefault and use window.scrollBy at boundaries.
+  // Relying on event propagation through overflow:hidden doesn't work reliably.
   useEffect(() => {
     const section = sectionRef.current;
     const onWheel = (e: WheelEvent) => {
-      const next = panelRef.current + (e.deltaY > 0 ? 1 : -1);
-
-      // Out of bounds: let the page scroll naturally (don't preventDefault)
-      if (next < 0 || next >= totalPanels) return;
-
-      // In bounds but blocked by cooldown or animation: eat the event
-      const now = Date.now();
-      if (animatingRef.current || now - lastWheelTime.current < TRANSITION_MS) {
-        e.preventDefault();
-        return;
-      }
-
       e.preventDefault();
-      lastWheelTime.current = now;
-      goToPanel(next);
+
+      const px = e.deltaMode === 0 ? e.deltaY
+        : e.deltaMode === 1 ? e.deltaY * 32
+        : e.deltaY * window.innerHeight;
+
+      const now = Date.now();
+
+      if (e.deltaY < 0) {
+        // Scrolling UP: navigate backward, or exit via window.scrollBy
+        if (panelRef.current === 0) {
+          window.scrollBy({ top: px, behavior: 'auto' });
+          return;
+        }
+        if (now - lastWheelTimeBack.current < BACK_COOLDOWN_MS) return;
+        lastWheelTimeBack.current = now;
+        goToPanel(panelRef.current - 1);
+      } else {
+        // Scrolling DOWN: advance the showcase, or exit via window.scrollBy
+        if (panelRef.current >= totalPanels - 1) {
+          window.scrollBy({ top: px, behavior: 'auto' });
+          return;
+        }
+        if (animatingRef.current || now - lastWheelTimeFwd.current < TRANSITION_MS) return;
+        lastWheelTimeFwd.current = now;
+        goToPanel(panelRef.current + 1);
+      }
     };
     section.addEventListener('wheel', onWheel, { passive: false });
     return () => section.removeEventListener('wheel', onWheel);

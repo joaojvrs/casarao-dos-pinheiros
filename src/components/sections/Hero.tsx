@@ -80,11 +80,14 @@ export const Hero: React.FC<HeroProps> = ({ onWeddingClick, onBookingClick }) =>
         )}
       </div>
 
+      {/* Dark overlay for text legibility */}
+      <div className="absolute inset-0 z-10 bg-black/50 pointer-events-none" style={{ backdropFilter: 'blur(1px)' }} />
+
       {/* Fog Overlay */}
-      <div className="absolute inset-0 z-10 bg-gradient-to-b from-black/50 via-transparent to-beige pointer-events-none" />
+      <div className="absolute inset-0 z-10 bg-gradient-to-b from-black/40 via-transparent to-beige pointer-events-none" />
       
       {/* Main Content */}
-      <div className="relative z-20 container mx-auto px-6 flex flex-col items-center text-center">
+      <div className="relative z-20 w-full max-w-7xl mx-auto px-8 md:px-16 flex flex-col items-start text-left">
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
@@ -112,7 +115,7 @@ export const Hero: React.FC<HeroProps> = ({ onWeddingClick, onBookingClick }) =>
           transition={{ duration: 2, delay: 1 }}
           className="max-w-xl text-white/80 text-sm md:text-base leading-relaxed tracking-wide font-light mb-12 drop-shadow-lg"
         >
-          Onde o luxo da exclusividade encontra a inteligência da natureza. 
+          Onde o luxo da exclusividade encontra a inteligência da natureza.
           Uma jornada digital imersiva sob a sombra dos pinheiros.
         </motion.p>
 
@@ -120,7 +123,7 @@ export const Hero: React.FC<HeroProps> = ({ onWeddingClick, onBookingClick }) =>
           initial={{ opacity: 0, scale: 0.8 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 1, delay: 1.5 }}
-          className="flex flex-col items-center gap-5"
+          className="flex flex-col items-start gap-5"
         >
           {/* Botão primário — Iniciar Experiência */}
           <button
@@ -171,7 +174,7 @@ export const Hero: React.FC<HeroProps> = ({ onWeddingClick, onBookingClick }) =>
           )}
           
           <div className="mt-20 animate-bounce text-white/30">
-            <div className="w-[1px] h-12 bg-gradient-to-b from-white/0 to-white mx-auto" />
+            <div className="w-[1px] h-12 bg-gradient-to-b from-white/0 to-white" />
           </div>
         </motion.div>
       </div>

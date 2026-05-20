@@ -178,7 +178,7 @@ async function summary(supabase: ReturnType<typeof createClient>) {
 }
 
 async function garconMenu(supabase: ReturnType<typeof createClient>) {
-  const [productsResult, tabsResult] = await Promise.all([
+  const [productsResult, tabsResult, roomsResult] = await Promise.all([
     supabase
       .from('restaurant_products')
       .select('id, name, description, sale_price, stock_quantity, active, show_on_guest_menu, image_url, restaurant_categories(name)')
@@ -186,13 +186,34 @@ async function garconMenu(supabase: ReturnType<typeof createClient>) {
       .order('name'),
     supabase
       .from('restaurant_tabs')
-      .select('id, code, status, subtotal, total, restaurant_tables(code, location)')
+      .select('id, code, booking_id, status, subtotal, total, restaurant_tables(code, location)')
       .in('status', ['open', 'pending_payment'])
       .order('opened_at', { ascending: false }),
+    supabase
+      .from('fd_room_assignments')
+      .select('id, booking_id, quarto_numero, checkin_real, checkout_previsto, adultos, criancas, bookings(confirmation_code, guests(name, phone))')
+      .eq('status', 'checked_in')
+      .order('quarto_numero'),
   ]);
   if (productsResult.error) throw productsResult.error;
   if (tabsResult.error) throw tabsResult.error;
-  return { products: productsResult.data || [], tabs: tabsResult.data || [] };
+  if (roomsResult.error) throw roomsResult.error;
+  const activeRooms = (roomsResult.data || []).map((item: Record<string, unknown>) => {
+    const booking = Array.isArray(item.bookings) ? item.bookings[0] : item.bookings as Record<string, unknown> | null;
+    const guest = booking ? (Array.isArray(booking.guests) ? booking.guests[0] : booking.guests as Record<string, unknown> | null) : null;
+    return {
+      assignment_id: item.id,
+      booking_id: item.booking_id,
+      room_number: item.quarto_numero,
+      guest_name: guest?.name || 'Hospede',
+      guest_phone: guest?.phone || null,
+      checkin_real: item.checkin_real || null,
+      checkout_previsto: item.checkout_previsto,
+      adults: Number(item.adultos || 0),
+      children: Number(item.criancas || 0),
+    };
+  });
+  return { products: productsResult.data || [], tabs: tabsResult.data || [], activeRooms };
 }
 
 async function saveProduct(supabase: ReturnType<typeof createClient>, input: ProductInput) {

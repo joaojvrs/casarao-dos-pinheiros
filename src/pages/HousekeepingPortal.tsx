@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -7,6 +7,7 @@ import {
   ClipboardCheck,
   ClipboardList,
   DoorOpen,
+  ImagePlus,
   Loader2,
   PackageSearch,
   Plus,
@@ -28,6 +29,7 @@ import {
   updateMaintenanceStatus,
   updateRoomStatus,
 } from '../services/housekeeping';
+import { supabase } from '../lib/supabase';
 import type {
   HKChecklistItem,
   HKCleaningLog,
@@ -392,12 +394,66 @@ function MaintenancePanel({ rooms, orders, working, isManager, onSave, onUpdateS
   const [prioridade, setPrioridade] = useState<MaintenancePriority>('media');
   const [descricao, setDescricao] = useState('');
   const [fotoUrl, setFotoUrl] = useState('');
+  const [fotoName, setFotoName] = useState('');
+  const [fotoUploading, setFotoUploading] = useState(false);
+  const [fotoError, setFotoError] = useState('');
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [selectedOrder, setSelectedOrder] = useState<HKMaintenanceOrder | null>(null);
+  const [draftStatus, setDraftStatus] = useState<MaintenanceStatus>('aberta');
+  const [statusObservation, setStatusObservation] = useState('');
   const [resolution, setResolution] = useState('');
   const visibleOrders = orders.filter(order => filter === 'todas' || order.status === filter);
 
   useEffect(() => {
     if (!roomId && rooms[0]) setRoomId(rooms[0].id);
   }, [roomId, rooms]);
+
+  useEffect(() => {
+    if (!selectedOrder) return;
+    setDraftStatus(selectedOrder.status);
+    setStatusObservation('');
+    setResolution(selectedOrder.resolucao || '');
+  }, [selectedOrder]);
+
+  const handleFotoUpload = async (file: File) => {
+    setFotoUploading(true);
+    setFotoError('');
+    try {
+      const ext = file.name.split('.').pop() || 'jpg';
+      const path = `maintenance/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+      const { error } = await supabase.storage.from('housekeeping-attachments').upload(path, file, { upsert: false });
+      if (error) throw error;
+      const { data } = supabase.storage.from('housekeeping-attachments').getPublicUrl(path);
+      setFotoUrl(data.publicUrl);
+      setFotoName(file.name);
+    } catch {
+      setFotoError('Nao foi possivel anexar a foto. Tente novamente.');
+    } finally {
+      setFotoUploading(false);
+    }
+  };
+
+  const clearFoto = () => {
+    setFotoUrl('');
+    setFotoName('');
+    setFotoError('');
+  };
+
+  const statusOptions = (['aberta', 'em_andamento', 'concluida', ...(isManager ? ['cancelada'] : [])] as MaintenanceStatus[]);
+  const modalCanSave = selectedOrder
+    && (draftStatus !== selectedOrder.status || statusObservation.trim().length > 0 || (draftStatus === 'concluida' && resolution.trim() !== (selectedOrder.resolucao || '').trim()))
+    && (draftStatus !== 'concluida' || resolution.trim().length >= 3);
+
+  const saveSelectedOrderStatus = () => {
+    if (!selectedOrder) return;
+    onUpdateStatus(
+      selectedOrder.id,
+      draftStatus,
+      statusObservation.trim() || `Status alterado para ${roomStatusLabel(draftStatus)}`,
+      draftStatus === 'concluida' ? resolution.trim() : undefined,
+    );
+    setSelectedOrder(null);
+  };
 
   return (
     <section className="rounded-lg border border-black/8 bg-white p-5 shadow-sm">
@@ -425,18 +481,49 @@ function MaintenancePanel({ rooms, orders, working, isManager, onSave, onUpdateS
           )}
           <Field label="Categoria"><select value={categoria} onChange={e => setCategoria(e.target.value as MaintenanceCategory)}>{(['eletrica', 'hidraulica', 'climatizacao', 'mobiliario', 'outros'] as MaintenanceCategory[]).map(item => <option key={item} value={item}>{item}</option>)}</select></Field>
           <Field label="Prioridade"><select value={prioridade} onChange={e => setPrioridade(e.target.value as MaintenancePriority)}>{(['alta', 'media', 'baixa'] as MaintenancePriority[]).map(item => <option key={item} value={item}>{item}</option>)}</select></Field>
-          <Field label="Foto URL"><input value={fotoUrl} onChange={e => setFotoUrl(e.target.value)} /></Field>
+          <div>
+            <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.18em] text-black/38">Foto anexa</span>
+            <div className="flex items-center gap-3">
+              {fotoUrl ? (
+                <img src={fotoUrl} alt="Foto anexada" className="h-14 w-14 shrink-0 rounded-lg border border-black/8 object-cover" />
+              ) : (
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg border border-dashed border-black/15 bg-white">
+                  {fotoUploading ? <Loader2 size={20} className="animate-spin text-black/35" /> : <ImagePlus size={20} className="text-black/25" />}
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="truncate rounded-lg border border-black/10 bg-white px-3 py-2 text-sm text-black/55">
+                  {fotoName || (fotoUrl ? 'Foto anexada' : 'Nenhum anexo selecionado')}
+                </div>
+                <div className="mt-1.5 flex gap-2">
+                  <button type="button" onClick={() => fileRef.current?.click()} disabled={fotoUploading} className="flex items-center gap-1.5 rounded-lg border border-black/10 bg-white px-3 py-1.5 text-xs font-semibold text-black/60 transition hover:border-[#9d7a4f] disabled:opacity-50">
+                    {fotoUploading ? <Loader2 size={12} className="animate-spin" /> : <ImagePlus size={12} />}
+                    {fotoUploading ? 'Enviando...' : 'Anexar foto'}
+                  </button>
+                  {fotoUrl && (
+                    <button type="button" onClick={clearFoto} className="flex items-center gap-1 rounded-lg border border-black/10 bg-white px-3 py-1.5 text-xs text-red-600 transition hover:border-red-200">
+                      <X size={12} /> Remover
+                    </button>
+                  )}
+                </div>
+                {fotoError && <p className="mt-1 text-xs text-red-600">{fotoError}</p>}
+              </div>
+            </div>
+            <input ref={fileRef} type="file" accept="image/jpeg,image/jpg,image/png,image/webp,image/heic" className="hidden"
+              onChange={e => { const f = e.target.files?.[0]; if (f) handleFotoUpload(f); e.target.value = ''; }}
+            />
+          </div>
           <label className="md:col-span-2">
             <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.18em] text-black/38">Descrição</span>
             <textarea value={descricao} onChange={e => setDescricao(e.target.value)} className="min-h-24 w-full rounded-lg border border-black/10 bg-white p-3 text-sm outline-none focus:border-[#9d7a4f]" />
           </label>
-          <button disabled={working || descricao.trim().length < 5} onClick={() => onSave({ room_id: useRoom ? roomId : undefined, local_livre: useRoom ? undefined : localLivre, categoria, prioridade, descricao, foto_url: fotoUrl })} className="h-12 rounded-lg bg-[#3a6b4a] text-xs font-bold uppercase tracking-[0.16em] text-white disabled:opacity-50">Abrir ordem</button>
+          <button disabled={working || fotoUploading || descricao.trim().length < 5} onClick={() => onSave({ room_id: useRoom ? roomId : undefined, local_livre: useRoom ? undefined : localLivre, categoria, prioridade, descricao, foto_url: fotoUrl })} className="h-12 rounded-lg bg-[#3a6b4a] text-xs font-bold uppercase tracking-[0.16em] text-white disabled:opacity-50">Abrir ordem</button>
         </div>
       )}
 
       <div className="space-y-3">
         {visibleOrders.map(order => (
-          <article key={order.id} className="rounded-lg border border-black/8 bg-white p-4">
+          <article key={order.id} onClick={() => setSelectedOrder(order)} role="button" tabIndex={0} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') setSelectedOrder(order); }} className="cursor-pointer rounded-lg border border-black/8 bg-white p-4 text-left transition hover:border-[#9d7a4f]/45 hover:bg-[#fffdf8]">
             <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
               <div>
                 <p className="font-semibold">{orderCode(order.id)} · {order.room?.numero ? `Quarto ${order.room.numero}` : order.local_livre || 'Local livre'}</p>
@@ -448,27 +535,91 @@ function MaintenancePanel({ rooms, orders, working, isManager, onSave, onUpdateS
               </div>
             </div>
             <p className="mt-3 text-xs text-black/42">Responsável: {order.responsavel?.nome || 'Sem responsável'} · Aberta em {formatDateTime(order.aberta_em)}</p>
-            <div className="mt-3 space-y-2 border-l border-black/10 pl-3">
-              {order.events.map(event => (
-                <div key={event.id} className="relative text-xs text-black/55">
-                  <span className="absolute -left-[17px] top-1 h-2 w-2 rounded-full bg-[#9d7a4f]" />
-                  <strong>{roomStatusLabel(event.status)}</strong> · {formatDateTime(event.created_at)} {event.descricao ? `· ${event.descricao}` : ''}
-                </div>
-              ))}
-            </div>
-            <div className="mt-4 flex flex-wrap gap-2">
-              {order.status === 'aberta' && <button disabled={working} onClick={() => onUpdateStatus(order.id, 'em_andamento', 'Atendimento iniciado')} className="rounded-full bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800 disabled:opacity-50">Iniciar atendimento</button>}
-              {order.status === 'em_andamento' && (
-                <>
-                  <input value={resolution} onChange={e => setResolution(e.target.value)} placeholder="Resolução" className="h-9 min-w-52 rounded-full border border-black/10 px-3 text-xs outline-none" />
-                  <button disabled={working || resolution.trim().length < 3} onClick={() => onUpdateStatus(order.id, 'concluida', 'Ordem concluida', resolution)} className="rounded-full bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800 disabled:opacity-50">Concluir</button>
-                </>
-              )}
-              {isManager && order.status !== 'cancelada' && order.status !== 'concluida' && <button disabled={working} onClick={() => onUpdateStatus(order.id, 'cancelada', 'Ordem cancelada')} className="rounded-full bg-gray-100 px-3 py-2 text-xs font-bold text-gray-700 disabled:opacity-50">Cancelar</button>}
-            </div>
+            {order.foto_url && (
+              <a href={order.foto_url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="mt-3 inline-flex items-center gap-2 rounded-lg border border-black/10 bg-[#faf7f0] p-2 text-xs font-semibold text-black/60 transition hover:border-[#9d7a4f]">
+                <img src={order.foto_url} alt="Anexo da ordem" className="h-10 w-10 rounded-md object-cover" />
+                Ver foto anexa
+              </a>
+            )}
+            <p className="mt-4 text-xs font-bold uppercase tracking-[0.16em] text-[#9d7a4f]">Abrir detalhes</p>
           </article>
         ))}
       </div>
+
+      {selectedOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
+          <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-lg bg-white p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-black/35">Pendência técnica</p>
+                <h3 className="mt-1 font-serif text-2xl">{orderCode(selectedOrder.id)} · {selectedOrder.room?.numero ? `Quarto ${selectedOrder.room.numero}` : selectedOrder.local_livre || 'Local livre'}</h3>
+              </div>
+              <button type="button" onClick={() => setSelectedOrder(null)} className="flex h-10 w-10 items-center justify-center rounded-full border border-black/10 text-black/55 transition hover:border-black/20">
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="mt-4 grid gap-3 rounded-lg bg-[#faf7f0] p-4 text-sm md:grid-cols-3">
+              <Info label="Status atual" value={roomStatusLabel(selectedOrder.status)} />
+              <Info label="Prioridade" value={roomStatusLabel(selectedOrder.prioridade)} />
+              <Info label="Categoria" value={roomStatusLabel(selectedOrder.categoria)} />
+              <Info label="Responsável" value={selectedOrder.responsavel?.nome || 'Sem responsável'} />
+              <Info label="Aberta em" value={formatDateTime(selectedOrder.aberta_em)} />
+              <Info label="Concluída em" value={formatDateTime(selectedOrder.concluida_em)} />
+            </div>
+
+            <div className="mt-4 grid gap-4 md:grid-cols-[1fr_220px]">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-black/35">Descrição</p>
+                <p className="mt-2 rounded-lg border border-black/8 bg-white p-3 text-sm text-black/70">{selectedOrder.descricao}</p>
+              </div>
+              {selectedOrder.foto_url && (
+                <a href={selectedOrder.foto_url} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-lg border border-black/8 bg-[#faf7f0]">
+                  <img src={selectedOrder.foto_url} alt="Anexo da ordem" className="h-36 w-full object-cover" />
+                  <span className="block px-3 py-2 text-xs font-semibold text-black/60">Abrir foto anexa</span>
+                </a>
+              )}
+            </div>
+
+            <div className="mt-5 grid gap-3 rounded-lg border border-black/8 bg-[#faf7f0] p-4 md:grid-cols-2">
+              <Field label="Novo status">
+                <select value={draftStatus} onChange={e => setDraftStatus(e.target.value as MaintenanceStatus)}>
+                  {statusOptions.map(status => <option key={status} value={status}>{roomStatusLabel(status)}</option>)}
+                </select>
+              </Field>
+              {draftStatus === 'concluida' && (
+                <label>
+                  <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.18em] text-black/38">Resolução</span>
+                  <input value={resolution} onChange={e => setResolution(e.target.value)} placeholder="O que foi feito" className="h-12 w-full rounded-lg border border-black/10 bg-white px-3 text-sm outline-none transition focus:border-[#9d7a4f]" />
+                </label>
+              )}
+              <label className="md:col-span-2">
+                <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.18em] text-black/38">Observações</span>
+                <textarea value={statusObservation} onChange={e => setStatusObservation(e.target.value)} placeholder="Ex.: peça solicitada, hóspede avisado, vistoria feita..." className="min-h-24 w-full rounded-lg border border-black/10 bg-white p-3 text-sm outline-none transition focus:border-[#9d7a4f]" />
+              </label>
+            </div>
+
+            <div className="mt-5">
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-black/35">Histórico</p>
+              <div className="mt-3 space-y-2 border-l border-black/10 pl-3">
+                {selectedOrder.events.length ? selectedOrder.events.map(event => (
+                  <div key={event.id} className="relative text-xs text-black/60">
+                    <span className="absolute -left-[17px] top-1 h-2 w-2 rounded-full bg-[#9d7a4f]" />
+                    <strong>{roomStatusLabel(event.status)}</strong> · {formatDateTime(event.created_at)} {event.descricao ? `· ${event.descricao}` : ''}
+                  </div>
+                )) : <p className="text-sm text-black/45">Sem movimentações registradas.</p>}
+              </div>
+            </div>
+
+            <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button type="button" onClick={() => setSelectedOrder(null)} className="h-11 rounded-lg border border-black/10 px-5 text-xs font-bold uppercase tracking-[0.16em] text-black/60">Fechar</button>
+              <button type="button" disabled={working || !modalCanSave} onClick={saveSelectedOrderStatus} className="h-11 rounded-lg bg-[#3a6b4a] px-5 text-xs font-bold uppercase tracking-[0.16em] text-white disabled:opacity-50">
+                Salvar atualização
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -487,8 +638,54 @@ function LostFoundPanel({ rooms, items, working, onSave, onUpdateStatus }: {
   const [hospedeNome, setHospedeNome] = useState('');
   const [hospedeContato, setHospedeContato] = useState('');
   const [fotoUrl, setFotoUrl] = useState('');
+  const [fotoName, setFotoName] = useState('');
+  const [fotoUploading, setFotoUploading] = useState(false);
+  const [fotoError, setFotoError] = useState('');
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [selectedItem, setSelectedItem] = useState<HKLostFound | null>(null);
+  const [draftStatus, setDraftStatus] = useState<LostFoundStatus>('aguardando');
   const [returnTo, setReturnTo] = useState('');
   const awaiting = items.filter(item => item.status === 'aguardando').length;
+
+  useEffect(() => {
+    if (!selectedItem) return;
+    setDraftStatus(selectedItem.status);
+    setReturnTo(selectedItem.devolvido_para || '');
+  }, [selectedItem]);
+
+  const handleFotoUpload = async (file: File) => {
+    setFotoUploading(true);
+    setFotoError('');
+    try {
+      const ext = file.name.split('.').pop() || 'jpg';
+      const path = `lost-found/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+      const { error } = await supabase.storage.from('housekeeping-attachments').upload(path, file, { upsert: false });
+      if (error) throw error;
+      const { data } = supabase.storage.from('housekeeping-attachments').getPublicUrl(path);
+      setFotoUrl(data.publicUrl);
+      setFotoName(file.name);
+    } catch {
+      setFotoError('Nao foi possivel anexar a foto. Tente novamente.');
+    } finally {
+      setFotoUploading(false);
+    }
+  };
+
+  const clearFoto = () => {
+    setFotoUrl('');
+    setFotoName('');
+    setFotoError('');
+  };
+
+  const saveSelectedItemStatus = () => {
+    if (!selectedItem) return;
+    onUpdateStatus(selectedItem.id, draftStatus, draftStatus === 'devolvido' ? returnTo.trim() : undefined);
+    setSelectedItem(null);
+  };
+
+  const itemCanSave = selectedItem
+    && draftStatus !== selectedItem.status
+    && (draftStatus !== 'devolvido' || returnTo.trim().length >= 2);
 
   return (
     <section className="rounded-lg border border-black/8 bg-white p-5 shadow-sm">
@@ -506,13 +703,44 @@ function LostFoundPanel({ rooms, items, working, onSave, onUpdateStatus }: {
           <Field label="Local de guarda"><input value={localGuarda} onChange={e => setLocalGuarda(e.target.value)} /></Field>
           <Field label="Hóspede"><input value={hospedeNome} onChange={e => setHospedeNome(e.target.value)} /></Field>
           <Field label="Contato"><input value={hospedeContato} onChange={e => setHospedeContato(e.target.value)} /></Field>
-          <Field label="Foto URL"><input value={fotoUrl} onChange={e => setFotoUrl(e.target.value)} /></Field>
+          <div>
+            <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.18em] text-black/38">Foto anexa</span>
+            <div className="flex items-center gap-3">
+              {fotoUrl ? (
+                <img src={fotoUrl} alt="Foto anexada" className="h-14 w-14 shrink-0 rounded-lg border border-black/8 object-cover" />
+              ) : (
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg border border-dashed border-black/15 bg-white">
+                  {fotoUploading ? <Loader2 size={20} className="animate-spin text-black/35" /> : <ImagePlus size={20} className="text-black/25" />}
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="truncate rounded-lg border border-black/10 bg-white px-3 py-2 text-sm text-black/55">
+                  {fotoName || (fotoUrl ? 'Foto anexada' : 'Nenhum anexo selecionado')}
+                </div>
+                <div className="mt-1.5 flex gap-2">
+                  <button type="button" onClick={() => fileRef.current?.click()} disabled={fotoUploading} className="flex items-center gap-1.5 rounded-lg border border-black/10 bg-white px-3 py-1.5 text-xs font-semibold text-black/60 transition hover:border-[#9d7a4f] disabled:opacity-50">
+                    {fotoUploading ? <Loader2 size={12} className="animate-spin" /> : <ImagePlus size={12} />}
+                    {fotoUploading ? 'Enviando...' : 'Anexar foto'}
+                  </button>
+                  {fotoUrl && (
+                    <button type="button" onClick={clearFoto} className="flex items-center gap-1 rounded-lg border border-black/10 bg-white px-3 py-1.5 text-xs text-red-600 transition hover:border-red-200">
+                      <X size={12} /> Remover
+                    </button>
+                  )}
+                </div>
+                {fotoError && <p className="mt-1 text-xs text-red-600">{fotoError}</p>}
+              </div>
+            </div>
+            <input ref={fileRef} type="file" accept="image/jpeg,image/jpg,image/png,image/webp,image/heic" className="hidden"
+              onChange={e => { const f = e.target.files?.[0]; if (f) handleFotoUpload(f); e.target.value = ''; }}
+            />
+          </div>
           <label className="md:col-span-2">
             <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.18em] text-black/38">Descrição</span>
             <textarea value={descricao} onChange={e => setDescricao(e.target.value)} className="min-h-20 w-full rounded-lg border border-black/10 bg-white p-3 text-sm outline-none focus:border-[#9d7a4f]" />
           </label>
           <div className="flex gap-2">
-            <button disabled={working || descricao.trim().length < 3} onClick={() => onSave({ room_id: roomId || undefined, descricao, foto_url: fotoUrl, local_guarda: localGuarda, hospede_nome: hospedeNome, hospede_contato: hospedeContato })} className="h-12 rounded-lg bg-[#3a6b4a] px-5 text-xs font-bold uppercase tracking-[0.16em] text-white disabled:opacity-50">Salvar</button>
+            <button disabled={working || fotoUploading || descricao.trim().length < 3} onClick={() => onSave({ room_id: roomId || undefined, descricao, foto_url: fotoUrl, local_guarda: localGuarda, hospede_nome: hospedeNome, hospede_contato: hospedeContato })} className="h-12 rounded-lg bg-[#3a6b4a] px-5 text-xs font-bold uppercase tracking-[0.16em] text-white disabled:opacity-50">Salvar</button>
             <button onClick={() => setOpenForm(false)} className="h-12 rounded-lg border border-black/10 px-5 text-xs font-bold uppercase tracking-[0.16em] text-black/60">Cancelar</button>
           </div>
         </div>
@@ -520,7 +748,7 @@ function LostFoundPanel({ rooms, items, working, onSave, onUpdateStatus }: {
 
       <div className="grid gap-3 lg:grid-cols-2">
         {items.map(item => (
-          <article key={item.id} className="rounded-lg border border-black/8 bg-white p-4">
+          <article key={item.id} onClick={() => setSelectedItem(item)} role="button" tabIndex={0} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') setSelectedItem(item); }} className="cursor-pointer rounded-lg border border-black/8 bg-white p-4 transition hover:border-[#9d7a4f]/45 hover:bg-[#fffdf8]">
             <div className="flex gap-3">
               <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[#faf7f0] text-2xl">
                 {item.foto_url ? <img src={item.foto_url} alt="" className="h-full w-full object-cover" /> : '◻'}
@@ -537,16 +765,74 @@ function LostFoundPanel({ rooms, items, working, onSave, onUpdateStatus }: {
               <Info label="Guardado em" value={item.local_guarda || '-'} />
               <Info label="Hóspede" value={item.hospede_nome || '-'} />
             </div>
-            {!['devolvido', 'descartado'].includes(item.status) && (
-              <div className="mt-4 flex flex-wrap gap-2">
-                <button disabled={working} onClick={() => onUpdateStatus(item.id, 'notificado')} className="rounded-full bg-blue-50 px-3 py-2 text-xs font-bold text-blue-800 disabled:opacity-50">Notificar hóspede</button>
-                <input value={returnTo} onChange={e => setReturnTo(e.target.value)} placeholder="Devolvido para" className="h-9 rounded-full border border-black/10 px-3 text-xs outline-none" />
-                <button disabled={working || returnTo.trim().length < 2} onClick={() => onUpdateStatus(item.id, 'devolvido', returnTo)} className="rounded-full bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800 disabled:opacity-50">Marcar devolvido</button>
-              </div>
-            )}
+            <p className="mt-4 text-xs font-bold uppercase tracking-[0.16em] text-[#9d7a4f]">Abrir detalhes</p>
           </article>
         ))}
       </div>
+
+      {selectedItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
+          <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-lg bg-white p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-black/35">Achado e perdido</p>
+                <h3 className="mt-1 font-serif text-2xl">{lostCode(selectedItem.id)} · {selectedItem.descricao}</h3>
+              </div>
+              <button type="button" onClick={() => setSelectedItem(null)} className="flex h-10 w-10 items-center justify-center rounded-full border border-black/10 text-black/55 transition hover:border-black/20">
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="mt-4 grid gap-3 rounded-lg bg-[#faf7f0] p-4 text-sm md:grid-cols-3">
+              <Info label="Status atual" value={roomStatusLabel(selectedItem.status)} />
+              <Info label="Quarto" value={selectedItem.room?.numero || '-'} />
+              <Info label="Encontrado em" value={formatDateTime(selectedItem.encontrado_em)} />
+              <Info label="Guardado em" value={selectedItem.local_guarda || '-'} />
+              <Info label="Hóspede" value={selectedItem.hospede_nome || '-'} />
+              <Info label="Contato" value={selectedItem.hospede_contato || '-'} />
+            </div>
+
+            <div className="mt-4 grid gap-4 md:grid-cols-[1fr_220px]">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-black/35">Descrição</p>
+                <p className="mt-2 rounded-lg border border-black/8 bg-white p-3 text-sm text-black/70">{selectedItem.descricao}</p>
+                <div className="mt-3 grid gap-3 rounded-lg border border-black/8 bg-white p-3 text-sm md:grid-cols-2">
+                  <Info label="Notificado em" value={formatDateTime(selectedItem.notificado_em)} />
+                  <Info label="Devolvido em" value={formatDateTime(selectedItem.devolvido_em)} />
+                  <Info label="Devolvido para" value={selectedItem.devolvido_para || '-'} />
+                </div>
+              </div>
+              {selectedItem.foto_url && (
+                <a href={selectedItem.foto_url} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-lg border border-black/8 bg-[#faf7f0]">
+                  <img src={selectedItem.foto_url} alt="Anexo do achado" className="h-36 w-full object-cover" />
+                  <span className="block px-3 py-2 text-xs font-semibold text-black/60">Abrir foto anexa</span>
+                </a>
+              )}
+            </div>
+
+            <div className="mt-5 grid gap-3 rounded-lg border border-black/8 bg-[#faf7f0] p-4 md:grid-cols-2">
+              <Field label="Novo status">
+                <select value={draftStatus} onChange={e => setDraftStatus(e.target.value as LostFoundStatus)}>
+                  {(['aguardando', 'notificado', 'devolvido', 'descartado'] as LostFoundStatus[]).map(status => <option key={status} value={status}>{roomStatusLabel(status)}</option>)}
+                </select>
+              </Field>
+              {draftStatus === 'devolvido' && (
+                <label>
+                  <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.18em] text-black/38">Devolvido para</span>
+                  <input value={returnTo} onChange={e => setReturnTo(e.target.value)} placeholder="Nome de quem recebeu" className="h-12 w-full rounded-lg border border-black/10 bg-white px-3 text-sm outline-none transition focus:border-[#9d7a4f]" />
+                </label>
+              )}
+            </div>
+
+            <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button type="button" onClick={() => setSelectedItem(null)} className="h-11 rounded-lg border border-black/10 px-5 text-xs font-bold uppercase tracking-[0.16em] text-black/60">Fechar</button>
+              <button type="button" disabled={working || !itemCanSave} onClick={saveSelectedItemStatus} className="h-11 rounded-lg bg-[#3a6b4a] px-5 text-xs font-bold uppercase tracking-[0.16em] text-white disabled:opacity-50">
+                Salvar atualização
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

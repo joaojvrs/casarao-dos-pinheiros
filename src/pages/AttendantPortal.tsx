@@ -61,6 +61,87 @@ const ATABS: { id: ATab; label: string; Icon: IconComponent }[] = [
   { id: 'account', label: 'Conta', Icon: CreditCard },
 ];
 
+interface FrigobarLine {
+  name: string;
+  qty: number;
+  total: number;
+  price: number;
+  icon: IconComponent;
+  standardQty: number;
+}
+
+interface RoomSummary {
+  room: string;
+  guestName: string;
+  orders: GuestOrder[];
+  hkRequests: HKRequest[];
+  frigobar: FrigobarLine[];
+  roomServiceTotal: number;
+  frigobarTotal: number;
+  pendingOrders: number;
+  pendingHK: number;
+  pixPending: number;
+}
+
+function money(value: number) {
+  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+function buildRoomSummaries(orders: GuestOrder[], hkRequests: HKRequest[], frigobarConsumed: Record<string, number>) {
+  const primaryRoom = orders[0]?.room || hkRequests[0]?.room || ROOM;
+  const primaryGuest = orders[0]?.guestName || hkRequests[0]?.guestName || 'Hóspede';
+  const map = new Map<string, RoomSummary>();
+
+  const ensureRoom = (room = primaryRoom, guestName = primaryGuest) => {
+    if (!map.has(room)) {
+      map.set(room, {
+        room,
+        guestName,
+        orders: [],
+        hkRequests: [],
+        frigobar: [],
+        roomServiceTotal: 0,
+        frigobarTotal: 0,
+        pendingOrders: 0,
+        pendingHK: 0,
+        pixPending: 0,
+      });
+    }
+    const summary = map.get(room)!;
+    if (guestName && summary.guestName === 'Hóspede') summary.guestName = guestName;
+    return summary;
+  };
+
+  orders.forEach(order => {
+    const room = ensureRoom(order.room, order.guestName);
+    room.orders.push(order);
+    if (order.paymentStatus === 'charged') room.roomServiceTotal += order.total;
+    if (order.status !== 'delivered') room.pendingOrders += 1;
+    if (order.payment === 'pix' && order.paymentStatus === 'pending') room.pixPending += 1;
+  });
+
+  hkRequests.forEach(req => {
+    const room = ensureRoom(req.room || primaryRoom, req.guestName || primaryGuest);
+    room.hkRequests.push(req);
+    if (req.status !== 'done') room.pendingHK += 1;
+  });
+
+  const frigobar = FRIGOBAR_ITEMS
+    .map(item => {
+      const qty = frigobarConsumed[item.name] || 0;
+      return { name: item.name, qty, total: qty * item.price, price: item.price, icon: item.icon, standardQty: item.standardQty };
+    })
+    .filter(item => item.qty > 0);
+  if (frigobar.length) {
+    const room = ensureRoom(primaryRoom, primaryGuest);
+    room.frigobar = frigobar;
+    room.frigobarTotal = frigobar.reduce((sum, item) => sum + item.total, 0);
+  }
+
+  if (!map.size) ensureRoom(primaryRoom, primaryGuest);
+  return Array.from(map.values()).sort((a, b) => (b.pendingOrders + b.pendingHK) - (a.pendingOrders + a.pendingHK) || a.room.localeCompare(b.room));
+}
+
 export const AttendantPortal: React.FC<AttendantPortalProps> = ({
   onBack, orders, onUpdateOrderStatus, onUpdatePaymentStatus,
   hkRequests, onUpdateHKStatus, frigobarConsumed,
@@ -68,12 +149,12 @@ export const AttendantPortal: React.FC<AttendantPortalProps> = ({
   const auth = useAuth();
   const [activeTab, setActiveTab] = useState<ATab>('orders');
 
+  const roomSummaries = buildRoomSummaries(orders, hkRequests, frigobarConsumed);
   const pendingOrders = orders.filter(o => o.status !== 'delivered').length;
   const pendingHK = hkRequests.filter(r => r.status !== 'done').length;
-  const frigoTotal = FRIGOBAR_ITEMS.reduce((sum, item) => sum + (frigobarConsumed[item.name] || 0) * item.price, 0);
-  const roomServiceTotal = orders.filter(o => o.paymentStatus === 'charged').reduce((s, o) => s + o.total, 0);
+  const frigoTotal = roomSummaries.reduce((sum, room) => sum + room.frigobarTotal, 0);
+  const roomServiceTotal = roomSummaries.reduce((sum, room) => sum + room.roomServiceTotal, 0);
   const operatorName = String(auth.user?.user_metadata?.full_name || auth.user?.email || 'Equipe');
-  const currentGuestName = orders[0]?.guestName || 'Hóspede';
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
@@ -94,8 +175,8 @@ export const AttendantPortal: React.FC<AttendantPortalProps> = ({
         <div className="max-w-3xl mx-auto px-4 pb-3 grid grid-cols-4 gap-2">
           <QuickStat label="Pedidos" value={String(pendingOrders)} accent={pendingOrders > 0 ? '#b45309' : '#15803d'} />
           <QuickStat label="Arrumação" value={String(pendingHK)} accent={pendingHK > 0 ? '#b45309' : '#15803d'} />
-          <QuickStat label="Frigobar" value={`R$${frigoTotal}`} accent="#1d4ed8" />
-          <QuickStat label="Conta" value={`R$${roomServiceTotal + frigoTotal}`} accent="#1a0f0a" />
+          <QuickStat label="Frigobar" value={money(frigoTotal)} accent="#1d4ed8" />
+          <QuickStat label="Conta" value={money(roomServiceTotal + frigoTotal)} accent="#1a0f0a" />
         </div>
       </header>
 
@@ -118,14 +199,15 @@ export const AttendantPortal: React.FC<AttendantPortalProps> = ({
 
       {/* Content */}
       <main className="max-w-3xl mx-auto px-4 pt-5">
+        <RoomOverview rooms={roomSummaries} />
         <AnimatePresence mode="wait">
           <motion.div key={activeTab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}>
             {activeTab === 'orders' && (
-              <OrdersTab orders={orders} onUpdateStatus={onUpdateOrderStatus} onUpdatePayment={onUpdatePaymentStatus} />
+              <OrdersTab rooms={roomSummaries} onUpdateStatus={onUpdateOrderStatus} onUpdatePayment={onUpdatePaymentStatus} />
             )}
-            {activeTab === 'frigobar' && <FrigobarTab consumed={frigobarConsumed} guestName={currentGuestName} />}
-            {activeTab === 'housekeeping' && <HousekeepingTab requests={hkRequests} onUpdateStatus={onUpdateHKStatus} />}
-            {activeTab === 'account' && <AccountTab orders={orders} frigobarConsumed={frigobarConsumed} guestName={currentGuestName} />}
+            {activeTab === 'frigobar' && <FrigobarTab rooms={roomSummaries} />}
+            {activeTab === 'housekeeping' && <HousekeepingTab rooms={roomSummaries} onUpdateStatus={onUpdateHKStatus} />}
+            {activeTab === 'account' && <AccountTab rooms={roomSummaries} />}
           </motion.div>
         </AnimatePresence>
       </main>
@@ -135,23 +217,25 @@ export const AttendantPortal: React.FC<AttendantPortalProps> = ({
 
 // ─── Orders Tab ───────────────────────────────────────────────────────────────
 
-function OrdersTab({ orders, onUpdateStatus, onUpdatePayment }: {
-  orders: GuestOrder[];
+function OrdersTab({ rooms, onUpdateStatus, onUpdatePayment }: {
+  rooms: RoomSummary[];
   onUpdateStatus: (id: string, status: GuestOrder['status']) => void;
   onUpdatePayment: (id: string, status: GuestOrder['paymentStatus']) => void;
 }) {
   const [expanded, setExpanded] = useState<string | null>(null);
+  const totalOrders = rooms.reduce((sum, room) => sum + room.orders.length, 0);
 
-  if (orders.length === 0) {
+  if (totalOrders === 0) {
     return (
-      <EmptyState icon={Package} title="Nenhum pedido ainda" desc="Os pedidos do hóspede aparecerão aqui em tempo real." />
+      <EmptyState icon={Package} title="Nenhum pedido ainda" desc="Quando um quarto fizer pedido, ele aparecerá agrupado pela UH com itens, pagamento e andamento." />
     );
   }
 
   return (
-    <div className="space-y-3">
-      <p className="text-xs text-gray-400 font-semibold uppercase tracking-widest mb-4">{orders.length} pedido{orders.length > 1 ? 's' : ''} · {ROOM}</p>
-      {orders.map(order => {
+    <div className="space-y-4">
+      {rooms.filter(room => room.orders.length > 0).map(room => (
+        <RoomSection key={room.room} room={room} subtitle={`${room.orders.length} pedido${room.orders.length > 1 ? 's' : ''} · ${money(room.roomServiceTotal)} na conta`}>
+          {room.orders.map(order => {
         const os = STATUS_ORDER[order.status];
         const ps = PAYMENT_STATUS[order.paymentStatus];
         const PayIcon = ps.icon;
@@ -169,7 +253,7 @@ function OrdersTab({ orders, onUpdateStatus, onUpdatePayment }: {
                 </div>
                 <p className="text-xs text-gray-400 mt-1">{new Date(order.placedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} · {order.items.length} {order.items.length === 1 ? 'item' : 'itens'}</p>
               </div>
-              <span className="text-base font-bold text-gray-800 shrink-0">R$ {order.total}</span>
+              <span className="text-base font-bold text-gray-800 shrink-0">{money(order.total)}</span>
               {isOpen ? <ChevronUp size={16} className="text-gray-400 shrink-0" /> : <ChevronDown size={16} className="text-gray-400 shrink-0" />}
             </button>
 
@@ -182,7 +266,7 @@ function OrdersTab({ orders, onUpdateStatus, onUpdatePayment }: {
                       {order.items.map(item => (
                         <div key={item.name} className="flex justify-between text-sm">
                           <span className="text-gray-600">{item.qty}× {item.name}</span>
-                          <span className="font-semibold text-gray-800">R$ {item.qty * item.price}</span>
+                          <span className="font-semibold text-gray-800">{money(item.qty * item.price)}</span>
                         </div>
                       ))}
                     </div>
@@ -216,71 +300,59 @@ function OrdersTab({ orders, onUpdateStatus, onUpdatePayment }: {
             </AnimatePresence>
           </div>
         );
-      })}
+          })}
+        </RoomSection>
+      ))}
     </div>
   );
 }
 
 // ─── Frigobar Tab ─────────────────────────────────────────────────────────────
 
-function FrigobarTab({ consumed, guestName }: { consumed: Record<string, number>; guestName: string }) {
-  const total = FRIGOBAR_ITEMS.reduce((sum, item) => sum + (consumed[item.name] || 0) * item.price, 0);
-  const hasConsumption = Object.values(consumed).some(v => v > 0);
+function FrigobarTab({ rooms }: { rooms: RoomSummary[] }) {
+  const roomsWithConsumption = rooms.filter(room => room.frigobar.length > 0);
 
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl bg-[#1a0f0a] p-4 text-white flex items-center justify-between">
-        <div>
-          <p className="text-xs text-white/50 uppercase tracking-widest">Consumação · {ROOM}</p>
-          <p className="font-semibold text-sm mt-0.5">{guestName}</p>
-        </div>
-        <div className="text-right">
-          <p className="text-2xl font-bold text-[#c3a37a]">R$ {total}</p>
-          <p className="text-[10px] text-white/40">a cobrar</p>
-        </div>
-      </div>
-
-      {!hasConsumption ? (
-        <EmptyState icon={Refrigerator} title="Frigobar intacto" desc="O hóspede ainda não registrou nenhuma consumação." />
+      {!roomsWithConsumption.length ? (
+        <EmptyState icon={Refrigerator} title="Nenhuma consumação de frigobar" desc="A consumação aparecerá agrupada pelo quarto assim que o hóspede registrar algum item." />
       ) : (
-        <div className="space-y-2">
-          {FRIGOBAR_ITEMS.filter(item => (consumed[item.name] || 0) > 0).map(item => {
-            const Icon = item.icon;
-            const qty = consumed[item.name] || 0;
-            return (
-              <div key={item.name} className="flex items-center gap-3 rounded-xl bg-white border border-gray-100 p-3 shadow-sm">
-                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-50">
-                  <Icon size={16} className="text-gray-400" />
-                </div>
-                <span className="flex-1 text-sm font-medium text-gray-700">{item.name}</span>
-                <span className="rounded-full bg-amber-50 border border-amber-200 px-2.5 py-1 text-xs font-bold text-amber-700">{qty}× consumido{qty > 1 ? 's' : ''}</span>
-                <span className="text-sm font-bold text-gray-800 w-14 text-right">R$ {qty * item.price}</span>
+        roomsWithConsumption.map(room => (
+          <RoomSection key={room.room} room={room} subtitle={`Consumação registrada · ${money(room.frigobarTotal)}`}>
+            <div className="space-y-2">
+              {room.frigobar.map(item => {
+                const Icon = item.icon;
+                return (
+                  <div key={item.name} className="flex items-center gap-3 rounded-xl bg-white border border-gray-100 p-3 shadow-sm">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-50">
+                      <Icon size={16} className="text-gray-400" />
+                    </div>
+                    <span className="flex-1 text-sm font-medium text-gray-700">{item.name}</span>
+                    <span className="rounded-full bg-amber-50 border border-amber-200 px-2.5 py-1 text-xs font-bold text-amber-700">{item.qty}× consumido{item.qty > 1 ? 's' : ''}</span>
+                    <span className="text-sm font-bold text-gray-800 w-20 text-right">{money(item.total)}</span>
+                  </div>
+                );
+              })}
+              <div className="rounded-xl bg-gray-50 border border-gray-200 p-3 flex justify-between items-center">
+                <span className="text-sm font-semibold text-gray-600">Total frigobar do quarto</span>
+                <span className="text-base font-bold text-gray-800">{money(room.frigobarTotal)}</span>
               </div>
-            );
-          })}
-          <div className="rounded-xl bg-gray-50 border border-gray-200 p-3 flex justify-between items-center">
-            <span className="text-sm font-semibold text-gray-600">Total frigobar</span>
-            <span className="text-base font-bold text-gray-800">R$ {total}</span>
-          </div>
-        </div>
+            </div>
+          </RoomSection>
+        ))
       )}
 
-      {/* Full inventory */}
       <div>
-        <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3">Estoque padrão do chalé</p>
+        <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3">Estoque padrão por quarto</p>
         <div className="space-y-2">
           {FRIGOBAR_ITEMS.map(item => {
             const Icon = item.icon;
-            const qty = consumed[item.name] || 0;
-            const remaining = item.standardQty - qty;
             return (
               <div key={item.name} className="flex items-center gap-3 rounded-xl bg-white border border-gray-100 p-3">
                 <Icon size={14} className="text-gray-300 shrink-0" />
                 <span className="flex-1 text-xs text-gray-500">{item.name}</span>
                 <span className="text-[10px] text-gray-400">{item.standardQty} un.</span>
-                <span className={`text-xs font-bold ${remaining < item.standardQty ? 'text-amber-600' : 'text-green-600'}`}>
-                  {remaining} restante{remaining !== 1 ? 's' : ''}
-                </span>
+                <span className="text-xs font-bold text-gray-700">{money(item.price)}</span>
               </div>
             );
           })}
@@ -292,158 +364,212 @@ function FrigobarTab({ consumed, guestName }: { consumed: Record<string, number>
 
 // ─── Housekeeping Tab ─────────────────────────────────────────────────────────
 
-function HousekeepingTab({ requests, onUpdateStatus }: {
-  requests: HKRequest[];
+function HousekeepingTab({ rooms, onUpdateStatus }: {
+  rooms: RoomSummary[];
   onUpdateStatus: (id: string, status: HKRequest['status']) => void;
 }) {
-  if (requests.length === 0) {
-    return <EmptyState icon={BedDouble} title="Nenhuma solicitação" desc="As solicitações de arrumação do hóspede aparecerão aqui." />;
+  const totalRequests = rooms.reduce((sum, room) => sum + room.hkRequests.length, 0);
+
+  if (totalRequests === 0) {
+    return <EmptyState icon={BedDouble} title="Nenhuma solicitação" desc="As solicitações de arrumação aparecerão agrupadas por quarto, com horário e serviços solicitados." />;
   }
 
   return (
-    <div className="space-y-3">
-      <p className="text-xs text-gray-400 font-semibold uppercase tracking-widest mb-4">{requests.length} solicitação{requests.length > 1 ? 'ões' : ''}</p>
-      {requests.map(req => {
-        const hs = STATUS_HK[req.status];
-        return (
-          <div key={req.id} className="rounded-2xl bg-white border border-gray-100 shadow-sm p-4 space-y-3">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <Clock size={13} className="text-gray-400" />
-                  <span className="text-base font-bold text-gray-800">{req.time}</span>
-                  <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ background: hs.bg, color: hs.color }}>{hs.label}</span>
+    <div className="space-y-4">
+      {rooms.filter(room => room.hkRequests.length > 0).map(room => (
+        <RoomSection key={room.room} room={room} subtitle={`${room.hkRequests.length} solicitação${room.hkRequests.length > 1 ? 'ões' : ''} · ${room.pendingHK} pendente${room.pendingHK !== 1 ? 's' : ''}`}>
+          {room.hkRequests.map(req => {
+            const hs = STATUS_HK[req.status];
+            return (
+              <div key={req.id} className="rounded-2xl bg-white border border-gray-100 shadow-sm p-4 space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <Clock size={13} className="text-gray-400" />
+                      <span className="text-base font-bold text-gray-800">{req.time}</span>
+                      <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ background: hs.bg, color: hs.color }}>{hs.label}</span>
+                    </div>
+                    <p className="text-[10px] text-gray-400 mt-1">Solicitado às {new Date(req.requestedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</p>
+                  </div>
                 </div>
-                <p className="text-[10px] text-gray-400 mt-1">Solicitado às {new Date(req.requestedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</p>
+
+                <div className="flex flex-wrap gap-1.5">
+                  {req.services.map(s => (
+                    <span key={s} className="rounded-full bg-gray-100 px-3 py-1 text-[10px] font-semibold text-gray-600">{s}</span>
+                  ))}
+                </div>
+
+                <div className="flex gap-2">
+                  {req.status === 'pending' && (
+                    <button onClick={() => onUpdateStatus(req.id, 'in_progress')}
+                      className="flex items-center gap-1.5 rounded-full bg-blue-50 border border-blue-200 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100 transition">
+                      <Loader2 size={12} /> Iniciar
+                    </button>
+                  )}
+                  {req.status === 'in_progress' && (
+                    <button onClick={() => onUpdateStatus(req.id, 'done')}
+                      className="flex items-center gap-1.5 rounded-full bg-green-50 border border-green-200 px-3 py-2 text-xs font-bold text-green-700 hover:bg-green-100 transition">
+                      <Check size={12} /> Concluir
+                    </button>
+                  )}
+                  {req.status === 'done' && (
+                    <span className="flex items-center gap-1.5 rounded-full bg-green-50 px-3 py-2 text-xs font-bold text-green-700">
+                      <CheckCircle2 size={12} /> Concluído
+                    </span>
+                  )}
+                </div>
               </div>
-            </div>
-
-            <div className="flex flex-wrap gap-1.5">
-              {req.services.map(s => (
-                <span key={s} className="rounded-full bg-gray-100 px-3 py-1 text-[10px] font-semibold text-gray-600">{s}</span>
-              ))}
-            </div>
-
-            <div className="flex gap-2">
-              {req.status === 'pending' && (
-                <button onClick={() => onUpdateStatus(req.id, 'in_progress')}
-                  className="flex items-center gap-1.5 rounded-full bg-blue-50 border border-blue-200 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100 transition">
-                  <Loader2 size={12} /> Iniciar
-                </button>
-              )}
-              {req.status === 'in_progress' && (
-                <button onClick={() => onUpdateStatus(req.id, 'done')}
-                  className="flex items-center gap-1.5 rounded-full bg-green-50 border border-green-200 px-3 py-2 text-xs font-bold text-green-700 hover:bg-green-100 transition">
-                  <Check size={12} /> Concluir
-                </button>
-              )}
-              {req.status === 'done' && (
-                <span className="flex items-center gap-1.5 rounded-full bg-green-50 px-3 py-2 text-xs font-bold text-green-700">
-                  <CheckCircle2 size={12} /> Concluído
-                </span>
-              )}
-            </div>
-          </div>
-        );
-      })}
+            );
+          })}
+        </RoomSection>
+      ))}
     </div>
   );
 }
 
 // ─── Account Tab ──────────────────────────────────────────────────────────────
 
-function AccountTab({ orders, frigobarConsumed, guestName }: {
-  orders: GuestOrder[];
-  frigobarConsumed: Record<string, number>;
-  guestName: string;
-}) {
-  const pixPending = orders.filter(o => o.payment === 'pix' && o.paymentStatus === 'pending');
-  const pixPaid = orders.filter(o => o.payment === 'pix' && o.paymentStatus === 'paid');
-  const roomCharged = orders.filter(o => o.paymentStatus === 'charged');
-  const frigoTotal = FRIGOBAR_ITEMS.reduce((sum, item) => sum + (frigobarConsumed[item.name] || 0) * item.price, 0);
-  const roomServiceTotal = roomCharged.reduce((s, o) => s + o.total, 0);
-  const grandTotal = roomServiceTotal + frigoTotal;
-  const pixTotal = pixPaid.reduce((s, o) => s + o.total, 0) + pixPending.reduce((s, o) => s + o.total, 0);
+function AccountTab({ rooms }: { rooms: RoomSummary[] }) {
+  const grandTotal = rooms.reduce((sum, room) => sum + room.roomServiceTotal + room.frigobarTotal, 0);
+  const pixPendingTotal = rooms.reduce((sum, room) => sum + room.orders.filter(o => o.payment === 'pix' && o.paymentStatus === 'pending').reduce((total, order) => total + order.total, 0), 0);
+  const pixPaidTotal = rooms.reduce((sum, room) => sum + room.orders.filter(o => o.payment === 'pix' && o.paymentStatus === 'paid').reduce((total, order) => total + order.total, 0), 0);
 
   return (
     <div className="space-y-4">
-      {/* Grand total */}
       <div className="rounded-2xl bg-[#1a0f0a] p-5 text-white">
-        <p className="text-xs uppercase tracking-widest text-white/40 mb-1">{ROOM} · {guestName}</p>
-        <p className="font-serif text-4xl font-bold text-[#c3a37a]">R$ {grandTotal}</p>
-        <p className="text-xs text-white/40 mt-1">total na conta do quarto</p>
-        <div className="mt-4 grid grid-cols-2 gap-2">
+        <p className="text-xs uppercase tracking-widest text-white/40 mb-1">Contas por quarto</p>
+        <p className="font-serif text-4xl font-bold text-[#c3a37a]">{money(grandTotal)}</p>
+        <p className="text-xs text-white/40 mt-1">total em aberto na conta dos quartos</p>
+        <div className="mt-4 grid grid-cols-3 gap-2">
           <div className="rounded-xl bg-white/8 p-3">
             <p className="text-[9px] uppercase tracking-widest text-white/40">Room service</p>
-            <p className="text-lg font-bold mt-0.5">R$ {roomServiceTotal}</p>
+            <p className="text-lg font-bold mt-0.5">{money(rooms.reduce((sum, room) => sum + room.roomServiceTotal, 0))}</p>
           </div>
           <div className="rounded-xl bg-white/8 p-3">
             <p className="text-[9px] uppercase tracking-widest text-white/40">Frigobar</p>
-            <p className="text-lg font-bold mt-0.5">R$ {frigoTotal}</p>
+            <p className="text-lg font-bold mt-0.5">{money(rooms.reduce((sum, room) => sum + room.frigobarTotal, 0))}</p>
+          </div>
+          <div className="rounded-xl bg-white/8 p-3">
+            <p className="text-[9px] uppercase tracking-widest text-white/40">PIX</p>
+            <p className="text-lg font-bold mt-0.5">{money(pixPendingTotal + pixPaidTotal)}</p>
           </div>
         </div>
       </div>
 
-      {/* PIX status */}
-      {pixPending.length > 0 && (
+      {pixPendingTotal > 0 && (
         <div className="rounded-2xl bg-amber-50 border border-amber-200 p-4">
           <div className="flex items-center gap-2 mb-2">
             <AlertCircle size={16} className="text-amber-600" />
-            <p className="text-sm font-bold text-amber-700">{pixPending.length} PIX aguardando confirmação</p>
+            <p className="text-sm font-bold text-amber-700">{money(pixPendingTotal)} em PIX aguardando confirmação</p>
           </div>
-          {pixPending.map(o => (
-            <div key={o.id} className="flex items-center justify-between text-sm mt-1">
-              <span className="text-amber-600">{new Date(o.placedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
-              <span className="font-bold text-amber-700">R$ {o.total}</span>
-            </div>
-          ))}
         </div>
       )}
 
-      {/* Room service detail */}
-      {roomCharged.length > 0 && (
-        <div>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3">Room service · conta do quarto</p>
-          <div className="space-y-2">
-            {roomCharged.map(o => (
-              <div key={o.id} className="flex items-center justify-between rounded-xl bg-white border border-gray-100 p-3 shadow-sm">
-                <div>
-                  <p className="text-xs font-semibold text-gray-700">{o.items.map(i => i.name).join(', ')}</p>
-                  <p className="text-[10px] text-gray-400">{new Date(o.placedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</p>
+      {rooms.map(room => {
+        const roomCharged = room.orders.filter(o => o.paymentStatus === 'charged');
+        const pixOrders = room.orders.filter(o => o.payment === 'pix');
+        const roomTotal = room.roomServiceTotal + room.frigobarTotal;
+        if (!roomTotal && pixOrders.length === 0) return null;
+
+        return (
+          <RoomSection key={room.room} room={room} subtitle={`Conta do quarto · ${money(roomTotal)}`}>
+            <div className="space-y-2">
+              {roomCharged.map(o => (
+                <div key={o.id} className="flex items-center justify-between rounded-xl bg-white border border-gray-100 p-3 shadow-sm">
+                  <div>
+                    <p className="text-xs font-semibold text-gray-700">{o.items.map(i => i.name).join(', ')}</p>
+                    <p className="text-[10px] text-gray-400">Room service · {new Date(o.placedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</p>
+                  </div>
+                  <span className="text-sm font-bold text-gray-800">{money(o.total)}</span>
                 </div>
-                <span className="text-sm font-bold text-gray-800">R$ {o.total}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Frigobar detail */}
-      {frigoTotal > 0 && (
-        <div>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3">Frigobar · consumação</p>
-          <div className="space-y-2">
-            {FRIGOBAR_ITEMS.filter(item => (frigobarConsumed[item.name] || 0) > 0).map(item => {
-              const qty = frigobarConsumed[item.name] || 0;
-              return (
+              ))}
+              {room.frigobar.map(item => (
                 <div key={item.name} className="flex items-center justify-between rounded-xl bg-white border border-gray-100 p-3 shadow-sm">
-                  <span className="text-xs font-semibold text-gray-700">{qty}× {item.name}</span>
-                  <span className="text-sm font-bold text-gray-800">R$ {qty * item.price}</span>
+                  <span className="text-xs font-semibold text-gray-700">{item.qty}× {item.name}</span>
+                  <span className="text-sm font-bold text-gray-800">{money(item.total)}</span>
                 </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+              ))}
+              {pixOrders.map(o => (
+                <div key={o.id} className="flex items-center justify-between rounded-xl bg-amber-50 border border-amber-100 p-3">
+                  <div>
+                    <p className="text-xs font-semibold text-amber-800">PIX · {PAYMENT_STATUS[o.paymentStatus].label}</p>
+                    <p className="text-[10px] text-amber-600">{new Date(o.placedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</p>
+                  </div>
+                  <span className="text-sm font-bold text-amber-800">{money(o.total)}</span>
+                </div>
+              ))}
+            </div>
+          </RoomSection>
+        );
+      })}
 
       {grandTotal === 0 && (
-        <EmptyState icon={CreditCard} title="Conta zerada" desc="Nenhum consumo registrado ainda nesta estadia." />
+        <EmptyState icon={CreditCard} title="Contas zeradas" desc="Nenhum quarto tem consumo lançado em conta no momento." />
       )}
     </div>
   );
 }
 
 // ─── Shared UI ────────────────────────────────────────────────────────────────
+
+function RoomOverview({ rooms }: { rooms: RoomSummary[] }) {
+  return (
+    <div className="mb-5">
+      <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-gray-400">Visão por quarto</p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {rooms.map(room => {
+          const total = room.roomServiceTotal + room.frigobarTotal;
+          const pending = room.pendingOrders + room.pendingHK;
+          return (
+            <div key={room.room} className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-[#3a6b4a]">{room.room}</p>
+                  <p className="mt-1 truncate text-sm font-semibold text-gray-700">{room.guestName}</p>
+                </div>
+                <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${pending ? 'bg-amber-50 text-amber-700' : 'bg-green-50 text-green-700'}`}>
+                  {pending ? `${pending} pendente${pending > 1 ? 's' : ''}` : 'Em dia'}
+                </span>
+              </div>
+              <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+                <MiniStat label="Pedidos" value={String(room.orders.length)} />
+                <MiniStat label="Arrum." value={String(room.hkRequests.length)} />
+                <MiniStat label="Conta" value={money(total)} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function RoomSection({ room, subtitle, children }: { room: RoomSummary; subtitle: string; children: React.ReactNode }) {
+  return (
+    <section className="rounded-2xl border border-gray-100 bg-white/70 p-3 shadow-sm">
+      <div className="mb-3 flex items-start justify-between gap-3 px-1">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-[#3a6b4a]">{room.room}</p>
+          <p className="mt-0.5 text-xs text-gray-400">{room.guestName} · {subtitle}</p>
+        </div>
+        <div className="text-right">
+          <p className="text-sm font-bold text-gray-800">{money(room.roomServiceTotal + room.frigobarTotal)}</p>
+          <p className="text-[9px] uppercase tracking-wide text-gray-400">em conta</p>
+        </div>
+      </div>
+      <div className="space-y-2">{children}</div>
+    </section>
+  );
+}
+
+function MiniStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl bg-gray-50 px-2 py-2">
+      <p className="truncate text-xs font-bold text-gray-800">{value}</p>
+      <p className="mt-0.5 text-[9px] uppercase tracking-wide text-gray-400">{label}</p>
+    </div>
+  );
+}
 
 function QuickStat({ label, value, accent }: { label: string; value: string; accent: string }) {
   return (

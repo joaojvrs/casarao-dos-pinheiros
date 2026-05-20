@@ -330,7 +330,7 @@ export const GuestPortal: React.FC<GuestPortalProps> = ({
       return;
     }
     const req: HKRequest = {
-      id: uid(), time: hkTime, services: hkServices,
+      id: uid(), room: effectiveLocation, guestName, time: hkTime, services: hkServices,
       status: 'pending', requestedAt: new Date().toISOString(),
     };
     onHKRequest(req);

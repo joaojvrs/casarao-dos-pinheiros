@@ -23,6 +23,8 @@ export interface GuestOrder {
 
 export interface HKRequest {
   id: string;
+  room?: string;
+  guestName?: string;
   time: string;
   services: string[];
   status: HKStatus;
