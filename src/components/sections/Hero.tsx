@@ -1,44 +1,7 @@
-import React, { useRef } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
-import { Points, PointMaterial } from '@react-three/drei';
-import * as THREE from 'three';
-import { motion } from 'motion/react';
+import React, { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { motion, useReducedMotion } from 'motion/react';
 
-function ParticleField() {
-  const ref = useRef<THREE.Points>(null!);
-  const [sphere] = React.useState(() => {
-    const positions = new Float32Array(1200 * 3);
-    for (let i = 0; i < 1200; i++) {
-      const r = 2 + Math.random() * 3;
-      const theta = Math.random() * 2 * Math.PI;
-      const phi = Math.acos(2 * Math.random() - 1);
-      positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
-      positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
-      positions[i * 3 + 2] = r * Math.cos(phi);
-    }
-    return positions;
-  });
-
-  useFrame((state, delta) => {
-    ref.current.rotation.x -= delta / 10;
-    ref.current.rotation.y -= delta / 15;
-  });
-
-  return (
-    <group rotation={[0, 0, Math.PI / 4]}>
-      <Points ref={ref} positions={sphere} stride={3} frustumCulled={false}>
-        <PointMaterial
-          transparent
-          color="#d4af37"
-          size={0.015}
-          sizeAttenuation={true}
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-        />
-      </Points>
-    </group>
-  );
-}
+const HeroParticles = lazy(() => import('./HeroParticles').then(m => ({ default: m.HeroParticles })));
 
 interface HeroProps {
   onWeddingClick?: () => void;
@@ -46,15 +9,62 @@ interface HeroProps {
 }
 
 export const Hero: React.FC<HeroProps> = ({ onWeddingClick, onBookingClick }) => {
+  const sectionRef = useRef<HTMLElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const reduceMotion = useReducedMotion();
+  const [isVisible, setIsVisible] = useState(true);
+  const [allowEnhancedMotion, setAllowEnhancedMotion] = useState(false);
+
+  useEffect(() => {
+    const section = sectionRef.current;
+    if (!section) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => setIsVisible(entry.isIntersecting),
+      { threshold: 0.18 }
+    );
+
+    observer.observe(section);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (reduceMotion) {
+      setAllowEnhancedMotion(false);
+      return;
+    }
+
+    const query = window.matchMedia('(min-width: 768px) and (pointer: fine)');
+    const update = () => setAllowEnhancedMotion(query.matches);
+
+    update();
+    query.addEventListener('change', update);
+    return () => query.removeEventListener('change', update);
+  }, [reduceMotion]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    if (!isVisible || reduceMotion) {
+      video.pause();
+      return;
+    }
+
+    const playPromise = video.play();
+    if (playPromise) playPromise.catch(() => undefined);
+  }, [isVisible, reduceMotion]);
+
   return (
-    <section className="relative h-screen w-full overflow-hidden flex items-center justify-center bg-beige">
+    <section ref={sectionRef} className="relative h-screen w-full overflow-hidden flex items-center justify-center bg-beige">
       {/* Background Video */}
       <div className="absolute inset-0 z-0">
         <video
-          autoPlay
+          ref={videoRef}
           loop
           muted
           playsInline
+          preload="metadata"
           className="w-full h-full object-cover brightness-[0.7] grayscale-[0.2]"
         >
           <source src="/video.mp4" type="video/mp4" />
@@ -63,9 +73,11 @@ export const Hero: React.FC<HeroProps> = ({ onWeddingClick, onBookingClick }) =>
 
       {/* 3D Background Overlay */}
       <div className="absolute inset-0 z-10 opacity-30 pointer-events-none">
-        <Canvas camera={{ position: [0, 0, 1] }}>
-          <ParticleField />
-        </Canvas>
+        {allowEnhancedMotion && isVisible && (
+          <Suspense fallback={null}>
+            <HeroParticles />
+          </Suspense>
+        )}
       </div>
 
       {/* Fog Overlay */}

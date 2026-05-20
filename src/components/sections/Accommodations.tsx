@@ -1,11 +1,7 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import gsap from 'gsap';
-import { ScrollTrigger } from 'gsap/ScrollTrigger';
-import { useGSAP } from '@gsap/react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, ChevronLeft, ChevronRight, Users, Moon, Bed, MapPin, Star, Sparkles } from 'lucide-react';
-
-gsap.registerPlugin(ScrollTrigger);
 
 interface CabinImage {
   src: string;
@@ -400,45 +396,136 @@ const AccommodationModal: React.FC<{ cabin: Cabin; onClose: () => void; onBookin
 };
 
 export const Accommodations: React.FC<{ onBookingClick?: () => void }> = ({ onBookingClick }) => {
-  const component = useRef<HTMLDivElement>(null!);
+  const sectionRef = useRef<HTMLElement>(null!);
   const slider = useRef<HTMLDivElement>(null!);
   const [selectedCabin, setSelectedCabin] = useState<Cabin | null>(null);
-  const [activeCard, setActiveCard] = useState<string | null>(null);
+  const [currentPanel, setCurrentPanel] = useState(0);
+  const panelRef = useRef(0);
+  const animatingRef = useRef(false);
+  const lastWheelTime = useRef(0);
+
+  const TRANSITION_MS = 1100;
 
   const totalPanels = CABINS.length + 1;
 
-  useGSAP(() => {
-    const panels = gsap.utils.toArray<HTMLElement>('.panel');
-    gsap.to(panels, {
-      xPercent: -100 * (panels.length - 1),
-      ease: 'none',
-      scrollTrigger: {
-        trigger: slider.current,
-        pin: true,
-        scrub: 1,
-        snap: 1 / (panels.length - 1),
-        end: () => '+=' + slider.current.offsetWidth,
-      },
+  const goToPanel = useCallback((index: number) => {
+    const clamped = Math.max(0, Math.min(totalPanels - 1, index));
+    if (clamped === panelRef.current) return;
+
+    panelRef.current = clamped;
+    setCurrentPanel(clamped);
+    animatingRef.current = true;
+
+    gsap.killTweensOf(slider.current.querySelectorAll('.panel'));
+    gsap.to(slider.current.querySelectorAll('.panel'), {
+      xPercent: -100 * clamped,
+      duration: TRANSITION_MS / 1000,
+      ease: 'power3.inOut',
+      onComplete: () => { animatingRef.current = false; },
     });
-    gsap.from('.accomm-title', {
-      y: 40,
-      opacity: 0,
-      duration: 1,
-      scrollTrigger: { trigger: slider.current, start: 'top 80%' },
-    });
-  }, { scope: component });
+  }, [totalPanels]);
+
+  // Wheel: one scroll notch = one panel transition
+  // Timestamp cooldown prevents double-skip from rapid wheel events on trackpads
+  useEffect(() => {
+    const section = sectionRef.current;
+    const onWheel = (e: WheelEvent) => {
+      const next = panelRef.current + (e.deltaY > 0 ? 1 : -1);
+
+      // Out of bounds: let the page scroll naturally (don't preventDefault)
+      if (next < 0 || next >= totalPanels) return;
+
+      // In bounds but blocked by cooldown or animation: eat the event
+      const now = Date.now();
+      if (animatingRef.current || now - lastWheelTime.current < TRANSITION_MS) {
+        e.preventDefault();
+        return;
+      }
+
+      e.preventDefault();
+      lastWheelTime.current = now;
+      goToPanel(next);
+    };
+    section.addEventListener('wheel', onWheel, { passive: false });
+    return () => section.removeEventListener('wheel', onWheel);
+  }, [goToPanel, totalPanels]);
+
+  // Touch: horizontal swipe
+  useEffect(() => {
+    const section = sectionRef.current;
+    let startX = 0;
+    let startY = 0;
+    const onTouchStart = (e: TouchEvent) => {
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+    };
+    const onTouchEnd = (e: TouchEvent) => {
+      const dx = e.changedTouches[0].clientX - startX;
+      const dy = e.changedTouches[0].clientY - startY;
+      if (Math.abs(dy) > Math.abs(dx) || Math.abs(dx) < 40) return;
+      goToPanel(panelRef.current + (dx < 0 ? 1 : -1));
+    };
+    section.addEventListener('touchstart', onTouchStart, { passive: true });
+    section.addEventListener('touchend', onTouchEnd, { passive: true });
+    return () => {
+      section.removeEventListener('touchstart', onTouchStart);
+      section.removeEventListener('touchend', onTouchEnd);
+    };
+  }, [goToPanel]);
+
+  // Reset to panel 0 when section scrolls entirely above the viewport
+  useEffect(() => {
+    const section = sectionRef.current;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (!entry.isIntersecting && entry.boundingClientRect.bottom < 0) {
+        panelRef.current = 0;
+        setCurrentPanel(0);
+        gsap.set(slider.current.querySelectorAll('.panel'), { xPercent: 0 });
+      }
+    }, { threshold: 0 });
+    observer.observe(section);
+    return () => observer.disconnect();
+  }, []);
+
+  // Resize: re-snap to current panel without animation
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const onResize = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        gsap.set(slider.current?.querySelectorAll('.panel'), { xPercent: -100 * panelRef.current });
+      }, 200);
+    };
+    window.addEventListener('resize', onResize);
+    return () => { clearTimeout(timer); window.removeEventListener('resize', onResize); };
+  }, []);
+
+  // Keyboard: arrows when section is in view
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const rect = sectionRef.current.getBoundingClientRect();
+      if (rect.top > window.innerHeight || rect.bottom < 0) return;
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') goToPanel(panelRef.current + 1);
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') goToPanel(panelRef.current - 1);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [goToPanel]);
 
   return (
     <>
-      <section ref={component} style={{ background: '#0d0a08' }} className="overflow-hidden">
+      <section
+        ref={sectionRef}
+        style={{ background: '#0d0a08', overscrollBehavior: 'none' }}
+        className="relative h-screen overflow-hidden"
+      >
         <div
           ref={slider}
-          className="relative flex h-screen items-center"
+          className="relative flex h-full items-center"
           style={{ width: `${totalPanels * 100}vw` }}
         >
           {/* Intro slide */}
-          <div className="panel w-screen h-screen flex items-center justify-center px-6 md:px-20 relative overflow-hidden">
-            {/* subtle texture overlay */}
+          <div className="panel w-screen h-screen flex items-center justify-center px-6 md:px-20 relative overflow-hidden" style={{ contain: 'layout paint' }}>
             <div className="absolute inset-0 pointer-events-none"
               style={{ background: 'radial-gradient(ellipse 80% 60% at 50% 50%, rgba(195,163,122,0.06) 0%, transparent 70%)' }} />
             <div className="max-w-4xl relative z-10">
@@ -453,10 +540,17 @@ export const Accommodations: React.FC<{ onBookingClick?: () => void }> = ({ onBo
                   Acomodações
                 </span>
               </motion.div>
-              <h2 className="accomm-title font-serif text-5xl md:text-7xl lg:text-[86px] italic mb-8 leading-[1.05]" style={{ color: '#f5ede0' }}>
+              <motion.h2
+                className="font-serif text-5xl md:text-7xl lg:text-[86px] italic mb-8 leading-[1.05]"
+                style={{ color: '#f5ede0' }}
+                initial={{ opacity: 0, y: 40 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                transition={{ duration: 1, ease: [0.22, 1, 0.36, 1] }}
+                viewport={{ once: true }}
+              >
                 onde se volta ao <br />
                 <span style={{ color: '#c3a37a' }}>princípio de tudo.</span>
-              </h2>
+              </motion.h2>
               <p className="max-w-md text-lg leading-relaxed mb-12" style={{ color: 'rgba(245,237,224,0.45)' }}>
                 Cada espaço foi desenhado como um portal individual — unindo arquitetura sustentável ao luxo contemporâneo.
               </p>
@@ -484,14 +578,17 @@ export const Accommodations: React.FC<{ onBookingClick?: () => void }> = ({ onBo
             <div
               key={cabin.id}
               className="panel w-screen h-screen flex items-center justify-center relative overflow-hidden"
+              style={{ contain: 'layout paint style' }}
             >
-              {/* Full-bleed image background (darkened) */}
+              {/* Full-bleed background */}
               <div className="absolute inset-0 z-0">
                 <img
                   src={cabin.mainImage}
                   alt=""
                   aria-hidden="true"
                   loading={index === 0 ? 'eager' : 'lazy'}
+                  fetchPriority={index === 0 ? 'high' : 'auto'}
+                  decoding={index === 0 ? 'sync' : 'async'}
                   className="w-full h-full object-cover"
                   style={{ filter: 'brightness(0.22) saturate(0.8)' }}
                 />
@@ -501,48 +598,37 @@ export const Accommodations: React.FC<{ onBookingClick?: () => void }> = ({ onBo
 
               {/* Content */}
               <div className="relative z-10 w-full max-w-7xl mx-auto px-6 md:px-16 xl:px-20 grid grid-cols-1 lg:grid-cols-2 gap-8 xl:gap-16 items-center">
-
-                {/* Left — premium image card */}
+                {/* Left — image card */}
                 <div
                   className="relative group overflow-hidden rounded-2xl cursor-pointer"
                   style={{ aspectRatio: '4/3', maxHeight: '62vh' }}
-                  onMouseEnter={() => setActiveCard(cabin.id)}
-                  onMouseLeave={() => setActiveCard(null)}
                   onClick={() => setSelectedCabin(cabin)}
                 >
                   <img
                     src={cabin.mainImage}
                     alt={cabin.title}
                     loading={index === 0 ? 'eager' : 'lazy'}
+                    fetchPriority={index === 0 ? 'high' : 'auto'}
+                    decoding={index === 0 ? 'sync' : 'async'}
                     className="w-full h-full object-cover transition-transform duration-[1400ms] ease-out group-hover:scale-105"
                   />
-
-                  {/* Dark gradient */}
                   <div className="absolute inset-0"
                     style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.65) 0%, transparent 55%)' }} />
-
-                  {/* Top-left badge */}
                   <div className="absolute top-5 left-5">
                     <span className="font-mono text-[10px] uppercase tracking-[0.3em] px-3 py-1.5 rounded-full border"
                       style={{ color: '#c3a37a', borderColor: 'rgba(195,163,122,0.35)', background: 'rgba(0,0,0,0.45)' }}>
                       #{cabin.id}
                     </span>
                   </div>
-
-                  {/* Photo count */}
                   <div className="absolute top-5 right-5 px-3 py-1.5 rounded-full text-[9px] uppercase tracking-widest border"
                     style={{ color: 'rgba(255,255,255,0.65)', borderColor: 'rgba(255,255,255,0.12)', background: 'rgba(0,0,0,0.35)' }}>
                     {cabin.gallery.length + 1} fotos
                   </div>
-
-                  {/* Bottom info on hover */}
                   <div className="absolute inset-x-0 bottom-0 p-5 translate-y-2 group-hover:translate-y-0 transition-transform duration-500">
                     <div className="flex items-center gap-2 mb-2">
-                      <Star size={10} fill="#c3a37a" style={{ color: '#c3a37a' }} />
-                      <Star size={10} fill="#c3a37a" style={{ color: '#c3a37a' }} />
-                      <Star size={10} fill="#c3a37a" style={{ color: '#c3a37a' }} />
-                      <Star size={10} fill="#c3a37a" style={{ color: '#c3a37a' }} />
-                      <Star size={10} fill="#c3a37a" style={{ color: '#c3a37a' }} />
+                      {[...Array(5)].map((_, i) => (
+                        <Star key={i} size={10} fill="#c3a37a" style={{ color: '#c3a37a' }} />
+                      ))}
                     </div>
                     <p className="text-white/90 text-xs font-medium">Ver galeria completa →</p>
                   </div>
@@ -550,7 +636,6 @@ export const Accommodations: React.FC<{ onBookingClick?: () => void }> = ({ onBo
 
                 {/* Right — info */}
                 <div className="space-y-5 lg:space-y-6">
-                  {/* Tags */}
                   <div className="flex flex-wrap gap-2">
                     {cabin.tags.map(tag => (
                       <span key={tag}
@@ -560,8 +645,6 @@ export const Accommodations: React.FC<{ onBookingClick?: () => void }> = ({ onBo
                       </span>
                     ))}
                   </div>
-
-                  {/* Title */}
                   <div>
                     <h3 className="font-serif text-4xl md:text-5xl xl:text-6xl leading-tight mb-2" style={{ color: '#f5ede0' }}>
                       {cabin.title}
@@ -575,27 +658,15 @@ export const Accommodations: React.FC<{ onBookingClick?: () => void }> = ({ onBo
                       </div>
                     )}
                   </div>
-
-                  {/* Stats row */}
                   <div className="flex gap-6 py-4 border-y text-[10px] uppercase tracking-[0.2em] font-medium"
                     style={{ borderColor: 'rgba(195,163,122,0.12)', color: 'rgba(195,163,122,0.45)' }}>
-                    <div>
-                      Capacidade&ensp;<span style={{ color: '#f5ede0' }}>{cabin.capacity}</span>
-                    </div>
-                    <div>
-                      Quartos&ensp;<span style={{ color: '#f5ede0' }}>{cabin.rooms}</span>
-                    </div>
-                    <div>
-                      Mín.&ensp;<span style={{ color: '#f5ede0' }}>{cabin.nights} noites</span>
-                    </div>
+                    <div>Capacidade&ensp;<span style={{ color: '#f5ede0' }}>{cabin.capacity}</span></div>
+                    <div>Quartos&ensp;<span style={{ color: '#f5ede0' }}>{cabin.rooms}</span></div>
+                    <div>Mín.&ensp;<span style={{ color: '#f5ede0' }}>{cabin.nights} noites</span></div>
                   </div>
-
-                  {/* Short description */}
                   <p className="text-base leading-relaxed max-w-md" style={{ color: 'rgba(245,237,224,0.55)' }}>
                     {cabin.shortDescription}
                   </p>
-
-                  {/* Amenities preview */}
                   <div className="grid grid-cols-2 gap-x-4 gap-y-2">
                     {cabin.amenities.slice(0, 6).map(a => (
                       <div key={a} className="flex items-center gap-2 text-[11px]" style={{ color: 'rgba(245,237,224,0.45)' }}>
@@ -604,8 +675,6 @@ export const Accommodations: React.FC<{ onBookingClick?: () => void }> = ({ onBo
                       </div>
                     ))}
                   </div>
-
-                  {/* CTAs */}
                   <div className="flex gap-3 pt-1">
                     <button
                       onClick={onBookingClick}
@@ -627,9 +696,9 @@ export const Accommodations: React.FC<{ onBookingClick?: () => void }> = ({ onBo
                 </div>
               </div>
 
-              {/* Slide indicator */}
+              {/* Slide indicators */}
               <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-2">
-                {CABINS.map((c, i) => (
+                {CABINS.map((c) => (
                   <div key={c.id}
                     className="rounded-full transition-all duration-300"
                     style={{
@@ -643,6 +712,30 @@ export const Accommodations: React.FC<{ onBookingClick?: () => void }> = ({ onBo
             </div>
           ))}
         </div>
+
+        {/* Prev arrow */}
+        {currentPanel > 0 && (
+          <button
+            onClick={() => goToPanel(currentPanel - 1)}
+            aria-label="Painel anterior"
+            className="absolute left-5 top-1/2 -translate-y-1/2 z-40 w-10 h-10 rounded-full flex items-center justify-center border border-white/15 hover:bg-white/10 transition-colors"
+            style={{ background: 'rgba(0,0,0,0.35)' }}
+          >
+            <ChevronLeft size={18} className="text-white" />
+          </button>
+        )}
+
+        {/* Next arrow */}
+        {currentPanel < totalPanels - 1 && (
+          <button
+            onClick={() => goToPanel(currentPanel + 1)}
+            aria-label="Próximo painel"
+            className="absolute right-5 top-1/2 -translate-y-1/2 z-40 w-10 h-10 rounded-full flex items-center justify-center border border-white/15 hover:bg-white/10 transition-colors"
+            style={{ background: 'rgba(0,0,0,0.35)' }}
+          >
+            <ChevronRight size={18} className="text-white" />
+          </button>
+        )}
       </section>
 
       <AnimatePresence>

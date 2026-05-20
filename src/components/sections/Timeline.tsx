@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { motion, useScroll, useTransform, useSpring, useInView } from 'motion/react';
+import { motion, useScroll, useSpring, useInView } from 'motion/react';
 import { Sunrise, Waves, Moon, Church, Zap, Mountain, Anchor, Sparkles, Fish, UtensilsCrossed } from 'lucide-react';
 
 // All accents drawn from the site palette: gold (#c3a37a), mist (#e8e2d9), forest (#3a6b4a)
@@ -68,19 +68,6 @@ const STEPS = [
 
 type Step = typeof STEPS[number];
 
-// Deterministic particles — warm dust and forest motes
-const PARTICLES = Array.from({ length: 22 }, (_, i) => ({
-  id: i,
-  x: (i * 37.3 + 13) % 100,
-  y: 5 + (i * 29.1 + 7) % 88,
-  size: 0.7 + (i % 4) * 0.5,
-  delay: (i * 1.4) % 10,
-  duration: 8 + (i % 6) * 1.4,
-  dy: 26 + (i % 4) * 12,
-  dx: ((i % 5) - 2) * 9,
-  gold: i % 3 !== 1,
-}));
-
 const StepCard: React.FC<{ step: Step; index: number }> = ({ step, index }) => {
   const ref = useRef<HTMLDivElement>(null);
   const isRight = index % 2 === 0;
@@ -130,15 +117,6 @@ const StepCard: React.FC<{ step: Step; index: number }> = ({ step, index }) => {
           <Icon size={17} style={{ color: step.accent }} />
         </motion.div>
 
-        {active && (
-          <motion.div
-            className="absolute rounded-full pointer-events-none"
-            style={{ border: `1px solid ${step.accent}40` }}
-            initial={{ width: 44, height: 44, opacity: 0.6 }}
-            animate={{ width: 96, height: 96, opacity: 0 }}
-            transition={{ duration: 2.4, repeat: Infinity, ease: 'easeOut' }}
-          />
-        )}
       </div>
 
       {/* Mobile marker */}
@@ -167,8 +145,8 @@ const StepCard: React.FC<{ step: Step; index: number }> = ({ step, index }) => {
       <div className={`hidden md:flex w-full ${isRight ? 'flex-row-reverse' : 'flex-row'}`}>
         <motion.div
           className={`w-5/12 ${isRight ? 'pr-14' : 'pl-14'}`}
-          initial={{ opacity: 0, x: isRight ? 75 : -75, filter: 'blur(10px)' }}
-          whileInView={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
+          initial={{ opacity: 0, x: isRight ? 56 : -56 }}
+          whileInView={{ opacity: 1, x: 0 }}
           transition={{ duration: 1.35, ease: [0.22, 1, 0.36, 1] }}
           viewport={{ once: true, margin: '-80px' }}
         >
@@ -176,7 +154,6 @@ const StepCard: React.FC<{ step: Step; index: number }> = ({ step, index }) => {
             className="relative rounded-2xl overflow-hidden p-8"
             style={{
               background: 'rgba(10,20,18,0.96)',
-              backdropFilter: 'blur(28px)',
               borderWidth: 1,
               borderStyle: 'solid',
             }}
@@ -235,8 +212,8 @@ const StepCard: React.FC<{ step: Step; index: number }> = ({ step, index }) => {
       {/* Mobile card */}
       <motion.div
         className="md:hidden w-full pl-10"
-        initial={{ opacity: 0, x: 44, filter: 'blur(8px)' }}
-        whileInView={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
+        initial={{ opacity: 0, x: 32 }}
+        whileInView={{ opacity: 1, x: 0 }}
         transition={{ duration: 1.1, ease: [0.22, 1, 0.36, 1] }}
         viewport={{ once: true, margin: '-60px' }}
       >
@@ -244,7 +221,6 @@ const StepCard: React.FC<{ step: Step; index: number }> = ({ step, index }) => {
           className="relative rounded-xl overflow-hidden p-5"
           style={{
             background: 'linear-gradient(145deg, rgba(7,13,12,0.99) 0%, rgba(15,25,22,0.98) 100%)',
-            backdropFilter: 'blur(18px)',
             borderWidth: 1,
             borderStyle: 'solid',
           }}
@@ -287,7 +263,6 @@ const StepCard: React.FC<{ step: Step; index: number }> = ({ step, index }) => {
 };
 
 export const Timeline: React.FC = () => {
-  const sectionRef = useRef<HTMLElement>(null);
   const stepsRef = useRef<HTMLDivElement>(null);
 
   const { scrollYProgress: lineProgress } = useScroll({
@@ -295,51 +270,17 @@ export const Timeline: React.FC = () => {
     offset: ['start 85%', 'end 15%'],
   });
   const springLine = useSpring(lineProgress, { stiffness: 55, damping: 22 });
-  const lineScaleY = useTransform(springLine, [0, 1], [0, 1]);
-
-  // Atmospheric bloom that drifts as you scroll
-  const { scrollYProgress: sectionProgress } = useScroll({
-    target: sectionRef,
-    offset: ['start end', 'end start'],
-  });
-  const bloomY = useTransform(sectionProgress, [0, 1], ['0%', '70%']);
+  const lineScaleY = springLine;
 
   return (
     <section
-      ref={sectionRef}
       className="relative overflow-hidden"
       style={{ background: '#fcf9f2', paddingBlock: '9rem' }}
     >
-
-      {/* Floating warm dust particles */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
-        {PARTICLES.map(p => (
-          <motion.div
-            key={p.id}
-            className="absolute rounded-full"
-            style={{
-              width: p.size,
-              height: p.size,
-              left: `${p.x}%`,
-              top: `${p.y}%`,
-              background: p.gold ? 'rgba(195,163,122,0.55)' : 'rgba(26,15,10,0.18)',
-            }}
-            animate={{
-              y: [-p.dy / 2, -p.dy, -p.dy / 2],
-              x: [-p.dx / 2, p.dx / 2, -p.dx / 2],
-              opacity: [0, 0.55, 0],
-            }}
-            transition={{ duration: p.duration, delay: p.delay, repeat: Infinity, ease: 'easeInOut' }}
-          />
-        ))}
-      </div>
-
-      {/* Scroll-following warm bloom */}
-      <motion.div
-        className="absolute inset-x-0 h-[700px] pointer-events-none z-0"
+      <div
+        className="absolute inset-x-0 top-1/4 h-[700px] pointer-events-none z-0"
         style={{
-          top: bloomY,
-          background: 'radial-gradient(ellipse 55% 50% at 50% 50%, rgba(195,163,122,0.055) 0%, transparent 100%)',
+          background: 'radial-gradient(ellipse 55% 50% at 50% 50%, rgba(195,163,122,0.045) 0%, transparent 100%)',
         }}
       />
 
