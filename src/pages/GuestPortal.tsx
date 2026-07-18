@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { getGuestMenu, getGuestOrders, getGuestStay, placeGuestOrder } from '../services/restaurant';
+import { createGuestServiceRequest, getGuestMenu, getGuestOrders, getGuestStay, placeGuestOrder } from '../services/restaurant';
 import type { GuestStay } from '../types/booking';
 import type { GuestOrderRecord, MenuProduct } from '../types/restaurant';
 import type { GuestOrder, HKRequest, PaymentMethod } from '../types/portal';
@@ -324,17 +324,39 @@ export const GuestPortal: React.FC<GuestPortalProps> = ({
     getGuestOrders().then(orders => setGuestOrders(orders)).catch(() => {});
   };
 
-  const confirmHK = () => {
+  const [hkPlacing, setHkPlacing] = useState(false);
+
+  const confirmHK = async () => {
     if (!stay?.canOrder) {
-      setHkConfirmed('Solicitacoes ficam disponiveis apenas durante a hospedagem ativa.');
+      setHkConfirmed('Solicitações ficam disponíveis apenas durante a hospedagem ativa.');
       return;
     }
+    if (hkServices.length === 0) {
+      setHkConfirmed('Selecione ao menos um serviço de arrumação.');
+      return;
+    }
+    const hkLocation = deliveryLocation || stay.accommodation.name;
+    setHkPlacing(true);
+    try {
+      await createGuestServiceRequest({
+        services: hkServices,
+        scheduledTime: hkTime,
+        roomName: hkLocation,
+        bookingId: stay.bookingId,
+      });
+    } catch (error) {
+      setHkConfirmed(error instanceof Error ? error.message : 'Não foi possível registrar a solicitação.');
+      setHkPlacing(false);
+      return;
+    }
+    // Optimistic reflection in the local UI stream.
     const req: HKRequest = {
-      id: uid(), room: effectiveLocation, guestName, time: hkTime, services: hkServices,
+      id: uid(), room: hkLocation, guestName, time: hkTime, services: hkServices,
       status: 'pending', requestedAt: new Date().toISOString(),
     };
     onHKRequest(req);
-    setHkConfirmed(`Seu chalé será arrumado às ${hkTime}.`);
+    setHkConfirmed(`Sua solicitação foi enviada à governança. Seu chalé será arrumado às ${hkTime}.`);
+    setHkPlacing(false);
   };
 
   const changeFrigobar = (name: string, delta: number) => {
@@ -413,7 +435,7 @@ export const GuestPortal: React.FC<GuestPortalProps> = ({
               <ChaletTab
                 hkTime={hkTime} setHkTime={setHkTime}
                 hkServices={hkServices} toggleHKService={s => setHkServices(p => p.includes(s) ? p.filter(x => x !== s) : [...p, s])}
-                hkConfirmed={hkConfirmed} confirmHK={confirmHK}
+                hkConfirmed={hkConfirmed} confirmHK={confirmHK} hkPlacing={hkPlacing}
               />
             )}
             {activeTab === 'concierge' && <ConciergeTab />}
@@ -1004,10 +1026,10 @@ function ExperiencesTab() {
 
 // ─── Chalet Tab ───────────────────────────────────────────────────────────────
 
-function ChaletTab({ hkTime, setHkTime, hkServices, toggleHKService, hkConfirmed, confirmHK }: {
+function ChaletTab({ hkTime, setHkTime, hkServices, toggleHKService, hkConfirmed, confirmHK, hkPlacing }: {
   hkTime: string; setHkTime: (v: string) => void;
   hkServices: string[]; toggleHKService: (s: string) => void;
-  hkConfirmed: string; confirmHK: () => void;
+  hkConfirmed: string; confirmHK: () => void; hkPlacing: boolean;
 }) {
   return (
     <div className="space-y-5">
@@ -1039,8 +1061,8 @@ function ChaletTab({ hkTime, setHkTime, hkServices, toggleHKService, hkConfirmed
             <button key={opt} onClick={() => toggleHKService(opt)} className={`rounded-full border px-3 py-2 text-xs font-bold uppercase tracking-wide transition ${hkServices.includes(opt) ? 'border-[#c3a37a] bg-[#c3a37a]/18 text-[#6f542f]' : 'border-[#1a0f0a]/10 bg-[#f4efe6] text-[#1a0f0a]/55'}`}>{opt}</button>
           ))}
         </div>
-        <button onClick={confirmHK} disabled={!!hkConfirmed} className="w-full rounded-full bg-[#1a0f0a] py-3.5 text-xs font-bold uppercase tracking-[0.2em] text-white hover:bg-[#c3a37a] hover:text-[#1a0f0a] transition disabled:opacity-50">
-          Confirmar arrumação
+        <button onClick={confirmHK} disabled={!!hkConfirmed || hkPlacing} className="w-full rounded-full bg-[#1a0f0a] py-3.5 text-xs font-bold uppercase tracking-[0.2em] text-white hover:bg-[#c3a37a] hover:text-[#1a0f0a] transition disabled:opacity-50">
+          {hkPlacing ? 'Enviando…' : 'Confirmar arrumação'}
         </button>
         {hkConfirmed && (
           <motion.p initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="rounded-xl bg-[#3a6b4a]/10 p-3 text-sm text-[#2e573b]">

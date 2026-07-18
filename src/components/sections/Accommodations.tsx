@@ -1,7 +1,10 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import gsap from 'gsap';
+import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, ChevronLeft, ChevronRight, Users, Moon, Bed, MapPin, Star, Sparkles } from 'lucide-react';
+
+gsap.registerPlugin(ScrollTrigger);
 
 interface CabinImage {
   src: string;
@@ -401,69 +404,113 @@ export const Accommodations: React.FC<{ onBookingClick?: () => void }> = ({ onBo
   const [selectedCabin, setSelectedCabin] = useState<Cabin | null>(null);
   const [currentPanel, setCurrentPanel] = useState(0);
   const panelRef = useRef(0);
-  const animatingRef = useRef(false);
-  const lastWheelTimeFwd = useRef(0);
-  const lastWheelTimeBack = useRef(0);
-
-  const TRANSITION_MS = 1100;
-  const BACK_COOLDOWN_MS = 400;
+  const triggerRef = useRef<ScrollTrigger | null>(null);
 
   const totalPanels = CABINS.length + 1;
 
   const goToPanel = useCallback((index: number) => {
-    const duration = TRANSITION_MS / 1000;
     const clamped = Math.max(0, Math.min(totalPanels - 1, index));
     if (clamped === panelRef.current) return;
 
     panelRef.current = clamped;
     setCurrentPanel(clamped);
-    animatingRef.current = true;
 
-    gsap.killTweensOf(slider.current.querySelectorAll('.panel'));
-    gsap.to(slider.current.querySelectorAll('.panel'), {
-      xPercent: -100 * clamped,
-      duration,
-      ease: 'power3.inOut',
-      onComplete: () => { animatingRef.current = false; },
-    });
+    const trigger = triggerRef.current;
+    if (!trigger) {
+      gsap.to(slider.current.querySelectorAll('.panel'), {
+        xPercent: -100 * clamped,
+        duration: 0.8,
+        ease: 'power3.inOut',
+      });
+      return;
+    }
+
+    const targetY = trigger.start + ((trigger.end - trigger.start) * clamped) / (totalPanels - 1);
+    window.scrollTo({ top: targetY, behavior: 'smooth' });
   }, [totalPanels]);
 
-  // Wheel: always preventDefault and use window.scrollBy at boundaries.
-  // Relying on event propagation through overflow:hidden doesn't work reliably.
   useEffect(() => {
     const section = sectionRef.current;
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault();
+    const panels = gsap.utils.toArray<HTMLElement>(slider.current.querySelectorAll('.panel'));
 
-      const px = e.deltaMode === 0 ? e.deltaY
-        : e.deltaMode === 1 ? e.deltaY * 32
-        : e.deltaY * window.innerHeight;
+    const ctx = gsap.context(() => {
+      gsap.set(panels, { xPercent: -100 * panelRef.current });
 
-      const now = Date.now();
+      const tween = gsap.to(panels, {
+        xPercent: -100 * (totalPanels - 1),
+        ease: 'none',
+        scrollTrigger: {
+          trigger: section,
+          start: 'top top',
+          end: () => `+=${window.innerHeight * (totalPanels - 1)}`,
+          pin: true,
+          scrub: 0.7,
+          invalidateOnRefresh: true,
+          anticipatePin: 1,
+          onUpdate: self => {
+            const nextPanel = Math.round(self.progress * (totalPanels - 1));
+            if (nextPanel !== panelRef.current) {
+              panelRef.current = nextPanel;
+              setCurrentPanel(nextPanel);
+            }
+          },
+        },
+      });
 
-      if (e.deltaY < 0) {
-        // Scrolling UP: navigate backward, or exit via window.scrollBy
-        if (panelRef.current === 0) {
-          window.scrollBy({ top: px, behavior: 'auto' });
-          return;
-        }
-        if (now - lastWheelTimeBack.current < BACK_COOLDOWN_MS) return;
-        lastWheelTimeBack.current = now;
-        goToPanel(panelRef.current - 1);
-      } else {
-        // Scrolling DOWN: advance the showcase, or exit via window.scrollBy
-        if (panelRef.current >= totalPanels - 1) {
-          window.scrollBy({ top: px, behavior: 'auto' });
-          return;
-        }
-        if (animatingRef.current || now - lastWheelTimeFwd.current < TRANSITION_MS) return;
-        lastWheelTimeFwd.current = now;
-        goToPanel(panelRef.current + 1);
+      triggerRef.current = tween.scrollTrigger || null;
+    }, section);
+
+    return () => {
+      triggerRef.current = null;
+      ctx.revert();
+    };
+  }, [totalPanels]);
+
+  useEffect(() => {
+    const refresh = () => ScrollTrigger.refresh();
+
+    const images = Array.from(sectionRef.current.querySelectorAll('img'));
+    const cleanupImages = images.map(image => {
+      if (image.complete) return undefined;
+      image.addEventListener('load', refresh, { once: true });
+      return () => image.removeEventListener('load', refresh);
+    });
+
+    refresh();
+
+    return () => {
+      cleanupImages.forEach(cleanup => cleanup?.());
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedCabin) {
+      ScrollTrigger.refresh();
+      return;
+    }
+
+    return () => {
+      requestAnimationFrame(() => ScrollTrigger.refresh());
+    };
+  }, [selectedCabin]);
+
+  useEffect(() => {
+    const onScrollEnd = () => {
+      const trigger = triggerRef.current;
+      if (!trigger) return;
+
+      const progress = gsap.utils.clamp(0, 1, trigger.progress);
+      const nearestPanel = Math.round(progress * (totalPanels - 1));
+      const targetY = trigger.start + ((trigger.end - trigger.start) * nearestPanel) / (totalPanels - 1);
+
+      if (Math.abs(window.scrollY - targetY) > 2 && window.scrollY > trigger.start && window.scrollY < trigger.end) {
+        window.scrollTo({ top: targetY, behavior: 'smooth' });
       }
     };
-    section.addEventListener('wheel', onWheel, { passive: false });
-    return () => section.removeEventListener('wheel', onWheel);
-  }, [goToPanel, totalPanels]);
+
+    ScrollTrigger.addEventListener('scrollEnd', onScrollEnd);
+    return () => ScrollTrigger.removeEventListener('scrollEnd', onScrollEnd);
+  }, [totalPanels]);
 
   // Touch: horizontal swipe
   useEffect(() => {
@@ -488,27 +535,12 @@ export const Accommodations: React.FC<{ onBookingClick?: () => void }> = ({ onBo
     };
   }, [goToPanel]);
 
-  // Reset to panel 0 when section scrolls entirely above the viewport
-  useEffect(() => {
-    const section = sectionRef.current;
-    const observer = new IntersectionObserver(([entry]) => {
-      if (!entry.isIntersecting && entry.boundingClientRect.bottom < 0) {
-        panelRef.current = 0;
-        setCurrentPanel(0);
-        gsap.set(slider.current.querySelectorAll('.panel'), { xPercent: 0 });
-      }
-    }, { threshold: 0 });
-    observer.observe(section);
-    return () => observer.disconnect();
-  }, []);
-
-  // Resize: re-snap to current panel without animation
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>;
     const onResize = () => {
       clearTimeout(timer);
       timer = setTimeout(() => {
-        gsap.set(slider.current?.querySelectorAll('.panel'), { xPercent: -100 * panelRef.current });
+        ScrollTrigger.refresh();
       }, 200);
     };
     window.addEventListener('resize', onResize);

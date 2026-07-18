@@ -1,24 +1,68 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   AlertCircle, ArrowLeft, Bath, BedDouble, Check, CheckCircle2, ChevronDown,
   ChevronUp, Clock, Coffee, CreditCard, Flame, GlassWater, Leaf,
-  ListOrdered, Loader2, Package, QrCode, Refrigerator, Sparkles,
+  ListOrdered, Loader2, Package, QrCode, Refrigerator, RefreshCw, Sparkles,
   ThumbsUp, UtensilsCrossed, Wine, X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import type { GuestOrder, HKRequest } from '../types/portal';
+import {
+  fetchAttendantBoard, updateGuestOrderStatus, updateServiceRequestStatus,
+  type AttendantBoard, type AttendantOrderStatus,
+} from '../services/attendant';
+
+function mapOrderStatus(status: AttendantOrderStatus): GuestOrder['status'] {
+  if (status === 'delivered') return 'delivered';
+  if (status === 'preparing' || status === 'ready') return 'preparing';
+  return 'pending';
+}
+
+function toDbOrderStatus(status: GuestOrder['status']): AttendantOrderStatus {
+  if (status === 'delivered') return 'delivered';
+  if (status === 'preparing') return 'preparing';
+  return 'new';
+}
+
+function boardToOrders(board: AttendantBoard | null): GuestOrder[] {
+  if (!board) return [];
+  return board.orders.map(order => ({
+    id: order.id,
+    room: order.room,
+    guestName: order.guestName,
+    // Backend stores money in cents; this portal's money() helper (and the frigobar
+    // figures) work in reais, so convert here to keep everything consistent.
+    items: order.items.map(item => ({ name: item.name, qty: item.quantity, price: item.unitPrice / 100 })),
+    total: order.total / 100,
+    // Guest Portal orders are always charged to the room tab.
+    payment: 'room' as const,
+    paymentStatus: 'charged' as const,
+    status: mapOrderStatus(order.status),
+    placedAt: order.createdAt,
+  }));
+}
+
+function boardToHKRequests(board: AttendantBoard | null): HKRequest[] {
+  if (!board) return [];
+  return board.requests.map(req => ({
+    id: req.id,
+    room: req.room,
+    guestName: req.guestName,
+    time: req.scheduledTime,
+    services: req.services,
+    status: req.status === 'cancelled' ? 'done' : req.status,
+    requestedAt: req.createdAt,
+  }));
+}
 
 type IconComponent = LucideIcon;
 
 interface AttendantPortalProps {
   onBack: () => void;
-  orders: GuestOrder[];
-  onUpdateOrderStatus: (id: string, status: GuestOrder['status']) => void;
-  onUpdatePaymentStatus: (id: string, paymentStatus: GuestOrder['paymentStatus']) => void;
-  hkRequests: HKRequest[];
-  onUpdateHKStatus: (id: string, status: HKRequest['status']) => void;
+  // Room-service orders and housekeeping requests are now fetched live from the
+  // backend inside this component; the frigobar tally is still passed in for now.
   frigobarConsumed: Record<string, number>;
 }
 
@@ -143,12 +187,61 @@ function buildRoomSummaries(orders: GuestOrder[], hkRequests: HKRequest[], frigo
 }
 
 export const AttendantPortal: React.FC<AttendantPortalProps> = ({
-  onBack, orders, onUpdateOrderStatus, onUpdatePaymentStatus,
-  hkRequests, onUpdateHKStatus, frigobarConsumed,
+  onBack, frigobarConsumed,
 }) => {
   const auth = useAuth();
   const [activeTab, setActiveTab] = useState<ATab>('orders');
+  const [board, setBoard] = useState<AttendantBoard | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [refreshedAt, setRefreshedAt] = useState<Date | null>(null);
 
+  const loadBoard = useCallback(async () => {
+    try {
+      const data = await fetchAttendantBoard();
+      setBoard(data);
+      setError('');
+      setRefreshedAt(new Date());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não foi possível carregar o painel.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Live-ish board: fetch on mount and poll every 15s so the team sees new
+  // guest orders and housekeeping requests without refreshing the page.
+  useEffect(() => {
+    let mounted = true;
+    const tick = () => { if (mounted) loadBoard(); };
+    tick();
+    const id = window.setInterval(tick, 15000);
+    return () => { mounted = false; window.clearInterval(id); };
+  }, [loadBoard]);
+
+  const onUpdateOrderStatus = useCallback(async (id: string, status: GuestOrder['status']) => {
+    setBoard(prev => prev ? { ...prev, orders: prev.orders.map(o => o.id === id ? { ...o, status: toDbOrderStatus(status) } : o) } : prev);
+    try {
+      await updateGuestOrderStatus(id, toDbOrderStatus(status));
+    } finally {
+      loadBoard();
+    }
+  }, [loadBoard]);
+
+  const onUpdateHKStatus = useCallback(async (id: string, status: HKRequest['status']) => {
+    const dbStatus = status === 'done' ? 'done' : status === 'in_progress' ? 'in_progress' : 'pending';
+    setBoard(prev => prev ? { ...prev, requests: prev.requests.map(r => r.id === id ? { ...r, status: dbStatus } : r) } : prev);
+    try {
+      await updateServiceRequestStatus(id, dbStatus);
+    } finally {
+      loadBoard();
+    }
+  }, [loadBoard]);
+
+  const onUpdatePaymentStatus = useCallback(() => { /* guest orders are room-charged; no manual PIX action here */ }, []);
+
+  const orders = boardToOrders(board);
+  const hkRequests = boardToHKRequests(board);
   const roomSummaries = buildRoomSummaries(orders, hkRequests, frigobarConsumed);
   const pendingOrders = orders.filter(o => o.status !== 'delivered').length;
   const pendingHK = hkRequests.filter(r => r.status !== 'done').length;
@@ -166,10 +259,20 @@ export const AttendantPortal: React.FC<AttendantPortalProps> = ({
           </button>
           <div className="text-center">
             <p className="text-xs font-bold uppercase tracking-widest text-[#3a6b4a]">Painel da Equipe</p>
-            <p className="text-[10px] text-gray-400 mt-0.5">Vale do Eden · {operatorName}</p>
+            <p className="text-[10px] text-gray-400 mt-0.5">
+              Vale do Eden · {operatorName}
+              {refreshedAt && <span className="ml-1">· {refreshedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>}
+            </p>
           </div>
-          <div className="h-9 w-9" />
+          <button onClick={() => loadBoard()} className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-gray-100 transition" title="Atualizar">
+            <RefreshCw size={16} className={`text-gray-500 ${loading ? 'animate-spin' : ''}`} />
+          </button>
         </div>
+        {error && (
+          <div className="max-w-3xl mx-auto px-4 pb-2">
+            <p className="rounded-lg bg-red-50 px-3 py-2 text-[11px] text-red-600">{error}</p>
+          </div>
+        )}
 
         {/* Quick stats */}
         <div className="max-w-3xl mx-auto px-4 pb-3 grid grid-cols-4 gap-2">

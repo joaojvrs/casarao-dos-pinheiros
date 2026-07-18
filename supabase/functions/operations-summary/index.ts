@@ -55,11 +55,46 @@ Deno.serve(async req => {
 
     const { data: monthBookings, error: monthError } = await supabase
       .from('bookings')
-      .select('id, guests_count, total, lodging_total, extras_total, experiences_total, check_in, check_out, status')
+      .select('id, guests_count, total, lodging_total, extras_total, experiences_total, nights, check_in, check_out, status')
       .gte('check_in', monthStart)
-      .in('status', ['pending', 'confirmed', 'completed']);
+      .in('status', ['pending', 'confirmed', 'completed', 'checked_in', 'checked_out']);
 
     if (monthError) throw monthError;
+
+    // Occupancy: rooms come from housekeeping inventory; occupied rooms from active
+    // front-desk assignments. Guarded so a missing table never breaks the summary.
+    let totalRooms = 0;
+    let occupiedRooms = 0;
+    try {
+      const { count: roomsCount } = await supabase
+        .from('hk_rooms')
+        .select('id', { count: 'exact', head: true })
+        .neq('status', 'bloqueado');
+      totalRooms = roomsCount || 0;
+      const { count: occupiedCount } = await supabase
+        .from('fd_room_assignments')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'checked_in');
+      occupiedRooms = occupiedCount || 0;
+    } catch (_roomError) {
+      totalRooms = 0;
+      occupiedRooms = 0;
+    }
+
+    // Restaurant revenue for the month (paid sales), guarded and only for finance roles.
+    let restaurantRevenue = 0;
+    if (canViewFinancial) {
+      try {
+        const { data: sales } = await supabase
+          .from('restaurant_sales')
+          .select('total, created_at, status')
+          .eq('status', 'paid')
+          .gte('created_at', `${monthStart}T00:00:00Z`);
+        restaurantRevenue = (sales || []).reduce((sum, sale) => sum + Number(sale.total || 0), 0);
+      } catch (_salesError) {
+        restaurantRevenue = 0;
+      }
+    }
 
     const { data: recentBookings, error: recentError } = await supabase
       .from('bookings')
@@ -75,6 +110,15 @@ Deno.serve(async req => {
     const consumptionRevenue = canViewFinancial ? (monthBookings || []).reduce((sum, booking) => sum + Number(booking.extras_total || 0) + Number(booking.experiences_total || 0), 0) : 0;
     const averageTicket = monthBookings?.length ? Math.round(monthRevenue / monthBookings.length) : 0;
 
+    // Hotel KPIs. Room-nights sold this month → ADR; available room-nights so far → RevPAR.
+    const roomNightsMonth = (monthBookings || []).reduce((sum, booking) => sum + Number(booking.nights || 0), 0);
+    const now = new Date();
+    const daysElapsed = Math.max(1, now.getUTCDate());
+    const availableRoomNights = totalRooms * daysElapsed;
+    const occupancyRate = totalRooms > 0 ? Math.round((occupiedRooms / totalRooms) * 100) : 0;
+    const adr = canViewFinancial && roomNightsMonth > 0 ? Math.round(lodgingRevenue / roomNightsMonth) : 0;
+    const revpar = canViewFinancial && availableRoomNights > 0 ? Math.round(lodgingRevenue / availableRoomNights) : 0;
+
     return json({
       summary: {
         canViewFinancial,
@@ -84,7 +128,14 @@ Deno.serve(async req => {
         monthRevenue,
         lodgingRevenue,
         consumptionRevenue,
+        restaurantRevenue,
         averageTicket,
+        totalRooms,
+        occupiedRooms,
+        occupancyRate,
+        roomNightsMonth,
+        adr,
+        revpar,
         recentBookings: (recentBookings || []).map(booking => ({
           id: booking.id,
           confirmationCode: booking.confirmation_code,

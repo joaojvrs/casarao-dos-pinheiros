@@ -7,6 +7,7 @@ const corsHeaders = {
 };
 
 type ExtraCode = 'extra_mattress' | 'crib';
+type PaymentMethod = 'pix' | 'credit_card' | 'courtesy' | 'owner_paid';
 
 interface BookingRequest {
   accommodationId: string;
@@ -27,12 +28,13 @@ interface BookingRequest {
   }>;
   experiences: string[];
   payment: {
-    method: 'pix' | 'credit_card';
+    method: PaymentMethod;
     holderName?: string;
     lastFour?: string;
     installments?: number;
   };
   notes?: string;
+  lgpdConsent?: boolean;
 }
 
 type EmailStatus = 'sent' | 'mocked' | 'failed';
@@ -94,6 +96,13 @@ async function getAuthenticatedUser(req: Request, supabase: ReturnType<typeof cr
   return data.user;
 }
 
+function describePaymentMethod(method: PaymentMethod): string {
+  if (method === 'courtesy') return 'Cortesia';
+  if (method === 'owner_paid') return 'Pago pelo responsavel';
+  if (method === 'pix') return 'PIX';
+  return 'Cartao de credito';
+}
+
 async function sendInstructionsEmail(supabase: ReturnType<typeof createClient>, input: {
   bookingId: string;
   recipient: string;
@@ -103,18 +112,21 @@ async function sendInstructionsEmail(supabase: ReturnType<typeof createClient>, 
   checkOut: string;
   accommodationName: string;
   total: number;
-  paymentMethod: string;
+  paymentMethod: PaymentMethod;
 }) {
+  const isInternal = input.paymentMethod === 'courtesy' || input.paymentMethod === 'owner_paid';
   const subject = `Sua hospedagem no Vale do Eden - ${input.confirmationCode}`;
   const body = [
     `Ola, ${input.guestName}.`,
     '',
-    `Sua hospedagem foi confirmada com pagamento aprovado.`,
+    isInternal
+      ? `Sua hospedagem foi confirmada. (${describePaymentMethod(input.paymentMethod)})`
+      : `Sua hospedagem foi confirmada com pagamento aprovado.`,
     `Codigo: ${input.confirmationCode}`,
     `Acomodacao: ${input.accommodationName}`,
     `Periodo: ${input.checkIn} ate ${input.checkOut}`,
-    `Total pago: ${formatBRLCents(input.total)}`,
-    `Metodo: ${input.paymentMethod === 'pix' ? 'PIX' : 'Cartao de credito'}`,
+    input.total > 0 ? `Total: ${formatBRLCents(input.total)}` : `Total: Cortesia (sem cobranca)`,
+    `Modalidade: ${describePaymentMethod(input.paymentMethod)}`,
     '',
     'Proximos passos:',
     '1. Acesse sua conta no site e entre no Portal do Hospede.',
@@ -267,8 +279,22 @@ Deno.serve(async req => {
 
     const user = await getAuthenticatedUser(req, supabase);
     if (!user?.email) return json({ error: 'Entre na sua conta para finalizar a hospedagem.' }, 401);
-    if (user.email.toLowerCase() !== payload.guest.email.trim().toLowerCase()) {
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .maybeSingle();
+    const isMasterOrAdmin = profile?.role === 'master' || profile?.role === 'admin';
+
+    if (!isMasterOrAdmin && user.email.toLowerCase() !== payload.guest.email.trim().toLowerCase()) {
       return json({ error: 'A hospedagem precisa usar o e-mail da conta autenticada.' }, 403);
+    }
+
+    // LGPD: a real guest must consent to personal-data processing. Internal bookings
+    // (master/admin creating courtesy/owner-paid stays) are exempt from the checkbox.
+    if (!isMasterOrAdmin && payload.lgpdConsent !== true) {
+      return json({ error: 'E necessario aceitar o tratamento de dados (LGPD) para concluir a hospedagem.' }, 400);
     }
 
     const { data: accommodation, error: accommodationError } = await supabase
@@ -313,15 +339,24 @@ Deno.serve(async req => {
     }
 
     const nights = daysBetween(payload.checkIn, payload.checkOut);
-    const lodgingTotal = accommodation.nightly_rate * nights;
-    const extrasTotal = safeExtras.reduce((sum, extra) => sum + extra.quantity * extra.unit_price, 0);
-    const experiencesTotal = experiences.length * EXPERIENCE_UNIT_PRICE;
-    const total = lodgingTotal + extrasTotal + experiencesTotal;
-    const paymentMethod = payload.payment?.method;
-    if (!['pix', 'credit_card'].includes(paymentMethod)) return json({ error: 'Escolha PIX ou cartao de credito.' }, 400);
+    const paymentMethod: PaymentMethod = payload.payment?.method;
+    const validMethods: PaymentMethod[] = isMasterOrAdmin
+      ? ['pix', 'credit_card', 'courtesy', 'owner_paid']
+      : ['pix', 'credit_card'];
+    if (!validMethods.includes(paymentMethod)) {
+      return json({ error: 'Metodo de pagamento invalido.' }, 400);
+    }
     if (paymentMethod === 'credit_card' && !/^\d{4}$/.test(String(payload.payment?.lastFour || ''))) {
       return json({ error: 'Informe os 4 ultimos digitos do cartao para o pagamento mockado.' }, 400);
     }
+
+    const isCourtesy = paymentMethod === 'courtesy';
+    const lodgingTotal = isCourtesy ? 0 : accommodation.nightly_rate * nights;
+    const extrasTotal = isCourtesy ? 0 : safeExtras.reduce((sum, extra) => sum + extra.quantity * extra.unit_price, 0);
+    const experiencesTotal = isCourtesy ? 0 : experiences.length * EXPERIENCE_UNIT_PRICE;
+    const total = lodgingTotal + extrasTotal + experiencesTotal;
+    const experienceUnitPrice = isCourtesy ? 0 : EXPERIENCE_UNIT_PRICE;
+    const extrasForDb = safeExtras.map(extra => isCourtesy ? { ...extra, unit_price: 0 } : extra);
 
     const { data: booking, error: bookingError } = await supabase.rpc('create_booking_atomic', {
       p_guest: {
@@ -343,8 +378,8 @@ Deno.serve(async req => {
         total,
         notes: payload.notes?.trim() || null,
       },
-      p_extras: safeExtras,
-      p_experiences: experiences.map(name => ({ name, unit_price: EXPERIENCE_UNIT_PRICE })),
+      p_extras: extrasForDb,
+      p_experiences: experiences.map(name => ({ name, unit_price: experienceUnitPrice })),
     });
 
     if (bookingError) {
@@ -363,34 +398,77 @@ Deno.serve(async req => {
     });
 
     const guestEmail = payload.guest.email.trim().toLowerCase();
-    const { error: profileRoleError } = await supabase
-      .from('profiles')
-      .update({
-        role: 'guest',
-        permissions: {},
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', user.id)
-      .in('role', ['visitor', 'guest']);
 
-    if (profileRoleError) throw profileRoleError;
+    if (paymentMethod === 'courtesy' || paymentMethod === 'owner_paid') {
+      await supabase.from('bookings').update({ source: `internal_${paymentMethod}` }).eq('id', booking.bookingId);
+    }
 
-    await supabase.auth.admin.updateUserById(user.id, {
-      app_metadata: { ...(user.app_metadata || {}), role: 'guest', permissions: {} },
-      user_metadata: { ...(user.user_metadata || {}), role: 'guest' },
-    });
+    if (payload.lgpdConsent === true) {
+      await supabase.from('bookings')
+        .update({ lgpd_consent: true, lgpd_consent_at: new Date().toISOString() })
+        .eq('id', booking.bookingId);
+    }
+
+    if (!isMasterOrAdmin) {
+      const { error: profileRoleError } = await supabase
+        .from('profiles')
+        .update({
+          role: 'guest',
+          permissions: {},
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', user.id)
+        .in('role', ['visitor', 'guest']);
+
+      if (profileRoleError) throw profileRoleError;
+
+      await supabase.auth.admin.updateUserById(user.id, {
+        app_metadata: { ...(user.app_metadata || {}), role: 'guest', permissions: {} },
+        user_metadata: { ...(user.user_metadata || {}), role: 'guest' },
+      });
+    }
+
+    const auditAction = paymentMethod === 'courtesy'
+      ? 'internal_booking_courtesy'
+      : paymentMethod === 'owner_paid'
+        ? 'internal_booking_owner_paid'
+        : 'mock_payment_approved';
 
     await supabase.from('audit_logs').insert({
       entity: 'bookings',
       entity_id: booking.bookingId,
-      action: 'mock_payment_approved',
+      action: auditAction,
       metadata: {
         method: paymentMethod,
         amount: total,
-        installments: payload.payment?.installments || 1,
+        installments: paymentMethod === 'credit_card' ? (payload.payment?.installments || 1) : null,
         last_four: paymentMethod === 'credit_card' ? payload.payment?.lastFour : null,
+        internal: isMasterOrAdmin,
       },
     });
+
+    // Payment record. PIX stays "pending" only when a real gateway is configured
+    // (PAYMENT_PROVIDER env); otherwise everything is auto-approved (mock), preserving
+    // the current instant-confirmation behavior until credentials are plugged in.
+    const gatewayProvider = Deno.env.get('PAYMENT_PROVIDER') || '';
+    const paymentPending = paymentMethod === 'pix' && Boolean(gatewayProvider) && total > 0;
+    const paymentStatusValue = paymentPending ? 'pending' : 'paid';
+    const paymentProvider = paymentMethod === 'courtesy' || paymentMethod === 'owner_paid'
+      ? 'internal'
+      : (paymentPending ? gatewayProvider : 'mock');
+
+    await supabase.from('booking_payments').insert({
+      booking_id: booking.bookingId,
+      method: paymentMethod,
+      amount: total,
+      status: paymentStatusValue,
+      provider: paymentProvider,
+      paid_at: paymentStatusValue === 'paid' ? new Date().toISOString() : null,
+    });
+
+    if (paymentStatusValue !== 'paid') {
+      await supabase.from('bookings').update({ payment_status: paymentStatusValue }).eq('id', booking.bookingId);
+    }
 
     const emailStatus = await sendInstructionsEmail(supabase, {
       bookingId: booking.bookingId,

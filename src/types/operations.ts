@@ -18,6 +18,13 @@ export interface OperationsSummary {
   monthRevenue: number;
   lodgingRevenue: number;
   consumptionRevenue: number;
+  restaurantRevenue: number;
   averageTicket: number;
+  totalRooms: number;
+  occupiedRooms: number;
+  occupancyRate: number;
+  roomNightsMonth: number;
+  adr: number;
+  revpar: number;
   recentBookings: RecentBooking[];
 }

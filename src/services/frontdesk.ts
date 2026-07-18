@@ -25,7 +25,21 @@ type FrontDeskAction =
   | 'emit_key'
   | 'save_guest_profile'
   | 'get_guest_history'
-  | 'save_incident';
+  | 'save_incident'
+  | 'pending_payments'
+  | 'confirm_payment';
+
+export interface PendingPayment {
+  id: string;
+  confirmationCode: string;
+  total: number;
+  checkIn: string;
+  checkOut: string;
+  paymentStatus: string;
+  accommodation: string;
+  guest: string;
+  phone: string;
+}
 
 interface FunctionResponse<T> {
   data: T;
@@ -115,4 +129,12 @@ export function saveIncident(data: {
   resolucao?: string;
 }) {
   return invokeFrontDesk<FDIncident>('save_incident', data as unknown as Record<string, unknown>);
+}
+
+export function getPendingPayments() {
+  return invokeFrontDesk<PendingPayment[]>('pending_payments');
+}
+
+export function confirmBookingPayment(booking_id: string) {
+  return invokeFrontDesk<{ bookingId: string; paymentStatus: string }>('confirm_payment', { booking_id });
 }

@@ -19,7 +19,6 @@ import { WeddingTeaser } from './components/sections/WeddingTeaser';
 import { useAuth } from './contexts/AuthContext';
 import { getDefaultRouteForAccess } from './lib/access-routing';
 import type { PermissionSet } from './types/auth';
-import type { GuestOrder, HKRequest } from './types/portal';
 import type { AppPage } from './types/navigation';
 
 const WeddingModule = lazy(() => import('./pages/WeddingModule').then(m => ({ default: m.WeddingModule })));
@@ -150,8 +149,6 @@ function HomePage({ navigatePage }: { navigatePage: (page: AppPage) => void }) {
 
 export default function App() {
   const [splashDone, setSplashDone] = useState(false);
-  const [orders, setOrders] = useState<GuestOrder[]>([]);
-  const [hkRequests, setHKRequests] = useState<HKRequest[]>([]);
   const [frigobarConsumed, setFrigobarConsumed] = useState<Record<string, number>>({});
   const navigate = useNavigate();
   const location = useLocation();
@@ -159,14 +156,10 @@ export default function App() {
   const navigatePage = (page: AppPage) => navigate(ROUTES[page]);
   const onBackHome = () => navigate('/');
 
-  const addOrder = (order: GuestOrder) => setOrders(prev => [order, ...prev]);
-  const updateOrderStatus = (id: string, status: GuestOrder['status']) =>
-    setOrders(prev => prev.map(o => o.id === id ? { ...o, status } : o));
-  const updatePaymentStatus = (id: string, paymentStatus: GuestOrder['paymentStatus']) =>
-    setOrders(prev => prev.map(o => o.id === id ? { ...o, paymentStatus } : o));
-  const addHKRequest = (req: HKRequest) => setHKRequests(prev => [req, ...prev]);
-  const updateHKStatus = (id: string, status: HKRequest['status']) =>
-    setHKRequests(prev => prev.map(r => r.id === id ? { ...r, status } : r));
+  // Room-service orders and housekeeping requests are persisted in the backend and
+  // read live by the Attendant Portal. These guest-side callbacks are now no-ops kept
+  // only for the Guest Portal's local optimistic UI.
+  const noop = () => {};
 
   return (
     <SmoothScroll>
@@ -182,10 +175,10 @@ export default function App() {
               <Route path="/casamentos" element={<motion.div key="wedding" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}><WeddingModule onBack={onBackHome} /></motion.div>} />
               <Route path="/reservas" element={<motion.div key="booking" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}><BookingPortal onBack={onBackHome} /></motion.div>} />
               <Route path="/login" element={<motion.div key="auth" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}><AuthPortal onBack={onBackHome} /></motion.div>} />
-              <Route path="/hospede" element={<Guard guestOnly><motion.div key="guest" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}><GuestPortal onBack={onBackHome} onPlaceOrder={addOrder} onHKRequest={addHKRequest} frigobarConsumed={frigobarConsumed} onFrigobarChange={setFrigobarConsumed} /></motion.div></Guard>} />
+              <Route path="/hospede" element={<Guard guestOnly><motion.div key="guest" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}><GuestPortal onBack={onBackHome} onPlaceOrder={noop} onHKRequest={noop} frigobarConsumed={frigobarConsumed} onFrigobarChange={setFrigobarConsumed} /></motion.div></Guard>} />
               <Route path="/equipe" element={<Guard teamOnly><motion.div key="operations" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}><OperationsPortal onBack={onBackHome} onNavigate={navigatePage} /></motion.div></Guard>} />
               <Route path="/equipe/acessos" element={<Guard teamOnly adminOnly><motion.div key="access" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}><AccessPortal onBack={() => navigate('/equipe')} /></motion.div></Guard>} />
-              <Route path="/equipe/atendimento" element={<Guard teamOnly permission="roomService"><motion.div key="attendant" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}><AttendantPortal onBack={() => navigate('/equipe')} orders={orders} onUpdateOrderStatus={updateOrderStatus} onUpdatePaymentStatus={updatePaymentStatus} hkRequests={hkRequests} onUpdateHKStatus={updateHKStatus} frigobarConsumed={frigobarConsumed} /></motion.div></Guard>} />
+              <Route path="/equipe/atendimento" element={<Guard teamOnly permission="roomService"><motion.div key="attendant" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}><AttendantPortal onBack={() => navigate('/equipe')} frigobarConsumed={frigobarConsumed} /></motion.div></Guard>} />
               <Route path="/equipe/recepcao" element={<Guard teamOnly permissionAny={['bookings', 'guests']}><motion.div key="frontdesk" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}><FrontDeskPortal onBack={() => navigate('/equipe')} /></motion.div></Guard>} />
               <Route path="/equipe/cozinha" element={<Guard teamOnly permission="kitchen"><motion.div key="kitchen" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}><KitchenPortal onBack={() => navigate('/equipe')} /></motion.div></Guard>} />
               <Route path="/equipe/governanca" element={<Guard teamOnly permission="housekeeping"><motion.div key="housekeeping" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}><HousekeepingPortal onBack={() => navigate('/equipe')} /></motion.div></Guard>} />

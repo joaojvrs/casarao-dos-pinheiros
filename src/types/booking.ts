@@ -14,6 +14,8 @@ export interface BookingExtraInput {
   unitPrice: number;
 }
 
+export type BookingPaymentMethod = 'pix' | 'credit_card' | 'courtesy' | 'owner_paid';
+
 export interface CreateBookingInput {
   accommodationId: string;
   checkIn: string;
@@ -28,12 +30,13 @@ export interface CreateBookingInput {
   extras: BookingExtraInput[];
   experiences: string[];
   payment: {
-    method: 'pix' | 'credit_card';
+    method: BookingPaymentMethod;
     holderName?: string;
     lastFour?: string;
     installments?: number;
   };
   notes: string;
+  lgpdConsent: boolean;
 }
 
 export interface CreateBookingResult {
@@ -43,7 +46,7 @@ export interface CreateBookingResult {
   nights: number;
   total: number;
   paymentStatus: 'paid';
-  paymentMethod: 'pix' | 'credit_card';
+  paymentMethod: BookingPaymentMethod;
   emailStatus: 'sent' | 'mocked' | 'failed';
 }
 

@@ -22,7 +22,16 @@ type RestaurantAction =
   | 'close_cash'
   | 'adjust_stock';
 
-type MenuAction = 'guest_menu' | 'guest_stay' | 'place_guest_order' | 'guest_orders';
+type MenuAction = 'guest_menu' | 'guest_stay' | 'place_guest_order' | 'guest_orders' | 'create_service_request' | 'my_service_requests';
+
+export interface GuestServiceRequestRecord {
+  id: string;
+  scheduled_time: string | null;
+  services: string[];
+  notes: string | null;
+  status: 'pending' | 'in_progress' | 'done' | 'cancelled';
+  created_at: string;
+}
 
 interface FunctionResponse<T> {
   data: T;
@@ -84,6 +93,20 @@ export function placeGuestOrder(input: {
 
 export function getGuestOrders() {
   return invokeMenu<GuestOrderRecord[]>('guest_orders');
+}
+
+export function createGuestServiceRequest(input: {
+  services: string[];
+  scheduledTime?: string;
+  notes?: string;
+  roomName?: string;
+  bookingId?: string;
+}) {
+  return invokeMenu<{ requestId: string; status: string }>('create_service_request', input as unknown as Record<string, unknown>);
+}
+
+export function getMyServiceRequests() {
+  return invokeMenu<GuestServiceRequestRecord[]>('my_service_requests');
 }
 
 export function getGarconMenu() {

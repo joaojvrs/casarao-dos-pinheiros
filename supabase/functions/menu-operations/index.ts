@@ -6,7 +6,7 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-type Action = 'guest_menu' | 'guest_stay' | 'place_guest_order' | 'guest_orders';
+type Action = 'guest_menu' | 'guest_stay' | 'place_guest_order' | 'guest_orders' | 'create_service_request' | 'my_service_requests';
 
 interface OrderItemInput {
   productId: string;
@@ -302,6 +302,55 @@ async function placeGuestOrder(
   return { orderId: order.id, orderNumber: order.order_number };
 }
 
+async function createServiceRequest(
+  supabase: ReturnType<typeof createClient>,
+  userId: string,
+  userEmail: string,
+  payload: Record<string, unknown>,
+) {
+  const stay = await getActiveGuestStayOrThrow(supabase, userEmail, String(payload.bookingId || ''));
+
+  const services = Array.isArray(payload.services)
+    ? (payload.services as unknown[]).map(item => String(item).trim()).filter(Boolean)
+    : [];
+  if (services.length === 0) throw new Error('Selecione ao menos um servico de arrumacao.');
+
+  const scheduledTime = String(payload.scheduledTime || '').trim() || null;
+  const notes = String(payload.notes || '').trim() || null;
+  const roomName = String(payload.roomName || stay.room?.number || stay.accommodation.name || 'Hospede').trim();
+
+  const { data, error } = await supabase
+    .from('guest_service_requests')
+    .insert({
+      booking_id: stay.bookingId,
+      created_by: userId,
+      guest_name: stay.guest.name,
+      room_name: roomName,
+      scheduled_time: scheduledTime,
+      services,
+      notes,
+      status: 'pending',
+    })
+    .select('id, status, scheduled_time, services')
+    .single();
+  if (error) throw error;
+
+  return { requestId: data.id, status: data.status };
+}
+
+async function getMyServiceRequests(supabase: ReturnType<typeof createClient>, email: string) {
+  const stay = await getGuestStay(supabase, email);
+  if (!stay) return [];
+  const { data, error } = await supabase
+    .from('guest_service_requests')
+    .select('id, scheduled_time, services, notes, status, created_at')
+    .eq('booking_id', stay.bookingId)
+    .order('created_at', { ascending: false })
+    .limit(15);
+  if (error) throw error;
+  return data || [];
+}
+
 Deno.serve(async req => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (req.method !== 'POST') return json({ error: 'Metodo nao permitido.' }, 405);
@@ -332,6 +381,18 @@ Deno.serve(async req => {
       const user = await getRequestUser(req, supabase);
       if (!user?.email) return json({ error: 'Sessao invalida.' }, 401);
       return json({ data: await getGuestOrders(supabase, user.email) });
+    }
+
+    if (action === 'create_service_request') {
+      const user = await getRequestUser(req, supabase);
+      if (!user?.email) return json({ error: 'Sessao invalida. Faca login para solicitar arrumacao.' }, 401);
+      return json({ data: await createServiceRequest(supabase, user.id, user.email, payload) }, 201);
+    }
+
+    if (action === 'my_service_requests') {
+      const user = await getRequestUser(req, supabase);
+      if (!user?.email) return json({ error: 'Sessao invalida.' }, 401);
+      return json({ data: await getMyServiceRequests(supabase, user.email) });
     }
 
     return json({ error: 'Acao invalida.' }, 400);

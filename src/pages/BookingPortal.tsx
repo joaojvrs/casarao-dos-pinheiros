@@ -9,6 +9,7 @@ import {
   Check,
   ConciergeBell,
   CreditCard,
+  Gift,
   IdCard,
   LogIn,
   Mail,
@@ -18,14 +19,16 @@ import {
   Plus,
   ShieldCheck,
   Sparkles,
+  UserRound,
   Users,
+  Wallet,
   Wine,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { createBooking as persistBooking } from '../services/bookings';
-import type { AccommodationOption, BookingExtraInput, CreateBookingResult } from '../types/booking';
+import type { AccommodationOption, BookingExtraInput, BookingPaymentMethod, CreateBookingResult } from '../types/booking';
 
 const ACCOMMODATIONS: AccommodationOption[] = [
   {
@@ -64,11 +67,14 @@ function addDays(date: Date, days: number) {
   return next.toISOString().slice(0, 10);
 }
 
+type InternalMode = 'owner_paid' | 'courtesy' | 'guest_pays';
+
 export function BookingPortal({ onBack }: { onBack: () => void }) {
   const auth = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const today = useMemo(() => new Date(), []);
+  const isMaster = auth.role === 'master' || auth.role === 'admin';
   const [accommodation, setAccommodation] = useState(ACCOMMODATIONS[0]);
   const [checkIn, setCheckIn] = useState(addDays(today, 7));
   const [checkOut, setCheckOut] = useState(addDays(today, 9));
@@ -80,8 +86,11 @@ export function BookingPortal({ onBack }: { onBack: () => void }) {
   const [cpf, setCpf] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
+  const [guestEmail, setGuestEmail] = useState('');
   const [notes, setNotes] = useState('');
+  const [lgpdConsent, setLgpdConsent] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'pix' | 'credit_card'>('pix');
+  const [internalMode, setInternalMode] = useState<InternalMode>('owner_paid');
   const [cardHolder, setCardHolder] = useState('');
   const [cardLastFour, setCardLastFour] = useState('');
   const [installments, setInstallments] = useState(1);
@@ -97,13 +106,22 @@ export function BookingPortal({ onBack }: { onBack: () => void }) {
   const total = subtotal + extrasTotal + experienceTotal;
   const accountEmail = auth.user?.email || '';
   const canBook = auth.authenticated && !auth.loading;
+  const displayTotal = isMaster && internalMode === 'courtesy' ? 0 : total;
+  const isSelfBooking = !isMaster || guestEmail.toLowerCase() === accountEmail.toLowerCase();
 
   useEffect(() => {
-    if (!auth.user) return;
+    if (!auth.user || isMaster) return;
     setEmail(auth.user.email || '');
     setGuestName(String(auth.user.user_metadata?.full_name || ''));
     setPhone(String(auth.user.user_metadata?.phone || ''));
-  }, [auth.user]);
+  }, [auth.user, isMaster]);
+
+  const fillWithMyProfile = () => {
+    if (!auth.user) return;
+    setGuestName(String(auth.user.user_metadata?.full_name || ''));
+    setPhone(String(auth.user.user_metadata?.phone || ''));
+    setGuestEmail(accountEmail);
+  };
 
   const toggleExperience = (item: string) => {
     setSelectedExperiences(prev => prev.includes(item) ? prev.filter(i => i !== item) : [...prev, item]);
@@ -132,8 +150,23 @@ export function BookingPortal({ onBack }: { onBack: () => void }) {
       return;
     }
 
-    if (paymentMethod === 'credit_card' && !/^\d{4}$/.test(cardLastFour)) {
+    if (isMaster && !guestEmail.trim()) {
+      setError('Informe o e-mail do hospede.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    const effectiveMethod: BookingPaymentMethod =
+      isMaster && internalMode !== 'guest_pays' ? internalMode : paymentMethod;
+
+    if (effectiveMethod === 'credit_card' && !/^\d{4}$/.test(cardLastFour)) {
       setError('Informe os 4 ultimos digitos do cartao para concluir o pagamento mockado.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    if (!isMaster && !lgpdConsent) {
+      setError('Para concluir, aceite o tratamento de dados pessoais (LGPD).');
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
@@ -151,16 +184,17 @@ export function BookingPortal({ onBack }: { onBack: () => void }) {
         checkIn,
         checkOut,
         guestsCount: guests,
-        guest: { name: guestName, cpf, phone, email: accountEmail },
+        guest: { name: guestName, cpf, phone, email: isMaster ? guestEmail.trim() : accountEmail },
         extras,
         experiences: selectedExperiences,
         payment: {
-          method: paymentMethod,
-          holderName: cardHolder,
-          lastFour: cardLastFour,
-          installments,
+          method: effectiveMethod,
+          holderName: cardHolder || undefined,
+          lastFour: cardLastFour || undefined,
+          installments: effectiveMethod === 'credit_card' ? installments : undefined,
         },
         notes,
+        lgpdConsent: isMaster ? true : lgpdConsent,
       });
       setCreated(booking);
       setRedirectCountdown(7);
@@ -176,13 +210,14 @@ export function BookingPortal({ onBack }: { onBack: () => void }) {
 
   useEffect(() => {
     if (!created) return;
-    const redirect = window.setTimeout(() => navigate('/hospede', { replace: true }), 7000);
+    const target = isSelfBooking ? '/hospede' : '/equipe';
+    const redirect = window.setTimeout(() => navigate(target, { replace: true }), 7000);
     const tick = window.setInterval(() => setRedirectCountdown(value => Math.max(0, value - 1)), 1000);
     return () => {
       window.clearTimeout(redirect);
       window.clearInterval(tick);
     };
-  }, [created, navigate]);
+  }, [created, navigate, isSelfBooking]);
 
   if (created) {
     return (
@@ -193,7 +228,8 @@ export function BookingPortal({ onBack }: { onBack: () => void }) {
         checkOut={checkOut}
         guests={guests}
         redirectCountdown={redirectCountdown}
-        onEnterPortal={() => navigate('/hospede', { replace: true })}
+        portalLabel={isSelfBooking ? 'Entrar no portal do hospede' : 'Voltar a operacao'}
+        onEnterPortal={() => navigate(isSelfBooking ? '/hospede' : '/equipe', { replace: true })}
         onNewBooking={() => setCreated(null)}
       />
     );
@@ -211,10 +247,16 @@ export function BookingPortal({ onBack }: { onBack: () => void }) {
           </button>
 
           <section className="max-w-3xl pb-10">
-            <p className="mb-5 text-[11px] font-semibold uppercase tracking-[0.34em] text-[#d7b98d]">Reservas do hotel</p>
-            <h1 className="font-serif text-5xl leading-[0.98] md:text-7xl">Gerar agendamento completo.</h1>
+            <p className="mb-5 text-[11px] font-semibold uppercase tracking-[0.34em] text-[#d7b98d]">
+              {isMaster ? 'Hospedagem Interna' : 'Reservas do hotel'}
+            </p>
+            <h1 className="font-serif text-5xl leading-[0.98] md:text-7xl">
+              {isMaster ? 'Registrar ocupacao.' : 'Gerar agendamento completo.'}
+            </h1>
             <p className="mt-6 max-w-xl text-sm leading-7 text-white/72 md:text-base">
-              Tela operacional de alto padrao com validacao de disponibilidade, regras de capacidade e gravacao segura da hospedagem no banco de dados.
+              {isMaster
+                ? 'Registre hospedagens internas, cortesias e reservas pagas pelo responsavel. O sistema bloqueia a acomodacao e notifica o hospede sem necessidade de pagamento externo.'
+                : 'Tela operacional de alto padrao com validacao de disponibilidade, regras de capacidade e gravacao segura da hospedagem no banco de dados.'}
             </p>
           </section>
         </div>
@@ -225,6 +267,20 @@ export function BookingPortal({ onBack }: { onBack: () => void }) {
           {error && (
             <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-900">
               {error}
+            </motion.div>
+          )}
+
+          {isMaster && (
+            <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="rounded-lg border border-[#9d7a4f]/25 bg-[#efe4d4]/50 p-5 text-sm text-[#20140d]">
+              <div className="flex items-start gap-3">
+                <ShieldCheck className="mt-0.5 shrink-0 text-[#735333]" size={18} />
+                <div>
+                  <p className="font-semibold text-[#4a2e0d]">Modo hospedagem interna</p>
+                  <p className="mt-1 leading-5 text-[#735333]">
+                    A acomodacao sera bloqueada no periodo escolhido. Use seu proprio perfil ou preencha os dados de outra pessoa.
+                  </p>
+                </div>
+              </div>
             </motion.div>
           )}
 
@@ -278,11 +334,28 @@ export function BookingPortal({ onBack }: { onBack: () => void }) {
           </Panel>
 
           <Panel title="Hospede principal" icon={ConciergeBell}>
+            {isMaster && (
+              <div className="mb-4 flex items-center justify-between gap-4 rounded-lg border border-black/8 bg-[#faf7f0] px-4 py-3">
+                <p className="text-xs text-black/50">Preencha os dados da pessoa que vai se hospedar ou use seu proprio perfil.</p>
+                <button
+                  type="button"
+                  onClick={fillWithMyProfile}
+                  className="flex shrink-0 items-center gap-2 rounded-lg border border-[#9d7a4f]/40 bg-white px-3 py-2 text-xs font-semibold text-[#735333] transition hover:border-[#9d7a4f] hover:bg-[#efe4d4]/40"
+                >
+                  <UserRound size={13} />
+                  Usar meu perfil
+                </button>
+              </div>
+            )}
             <div className="grid gap-4 md:grid-cols-2">
               <Field label="Nome" icon={Users}><input value={guestName} onChange={e => setGuestName(e.target.value)} /></Field>
               <Field label="CPF" icon={IdCard}><input value={cpf} onChange={e => setCpf(e.target.value)} placeholder="000.000.000-00" /></Field>
               <Field label="Telefone" icon={Phone}><input value={phone} onChange={e => setPhone(e.target.value)} /></Field>
-              <Field label="E-mail da conta" icon={Mail}><input type="email" value={accountEmail || email} readOnly /></Field>
+              {isMaster ? (
+                <Field label="E-mail do hospede" icon={Mail}><input type="email" value={guestEmail} onChange={e => setGuestEmail(e.target.value)} /></Field>
+              ) : (
+                <Field label="E-mail da conta" icon={Mail}><input type="email" value={accountEmail || email} readOnly /></Field>
+              )}
             </div>
           </Panel>
 
@@ -309,31 +382,94 @@ export function BookingPortal({ onBack }: { onBack: () => void }) {
             </label>
           </Panel>
 
-          <Panel title="Pagamento mockado" icon={CreditCard}>
-            <div className="grid gap-3 md:grid-cols-2">
-              <button type="button" onClick={() => setPaymentMethod('pix')} className={`rounded-lg border p-4 text-left transition ${paymentMethod === 'pix' ? 'border-[#3a6b4a] bg-emerald-50' : 'border-black/10 bg-white hover:border-[#c3a37a]'}`}>
-                <p className="text-sm font-semibold">PIX aprovado na hora</p>
-                <p className="mt-1 text-xs leading-5 text-black/50">Gera uma chave demonstrativa e confirma a hospedagem sem gateway real.</p>
-              </button>
-              <button type="button" onClick={() => setPaymentMethod('credit_card')} className={`rounded-lg border p-4 text-left transition ${paymentMethod === 'credit_card' ? 'border-[#3a6b4a] bg-emerald-50' : 'border-black/10 bg-white hover:border-[#c3a37a]'}`}>
-                <p className="text-sm font-semibold">Cartao de credito mockado</p>
-                <p className="mt-1 text-xs leading-5 text-black/50">Valida somente os dados basicos e registra pagamento aprovado.</p>
-              </button>
-            </div>
+          {isMaster ? (
+            <Panel title="Tipo de hospedagem" icon={CreditCard}>
+              <div className="grid gap-3 md:grid-cols-3">
+                <button type="button" onClick={() => setInternalMode('owner_paid')} className={`rounded-lg border p-4 text-left transition ${internalMode === 'owner_paid' ? 'border-[#3a6b4a] bg-emerald-50' : 'border-black/10 bg-white hover:border-[#c3a37a]'}`}>
+                  <Wallet size={16} className="mb-2 text-[#735333]" />
+                  <p className="text-sm font-semibold">Pago pelo responsavel</p>
+                  <p className="mt-1 text-xs leading-5 text-black/50">O responsavel assume o custo. Valor registrado internamente sem cobranca externa.</p>
+                </button>
+                <button type="button" onClick={() => setInternalMode('courtesy')} className={`rounded-lg border p-4 text-left transition ${internalMode === 'courtesy' ? 'border-[#3a6b4a] bg-emerald-50' : 'border-black/10 bg-white hover:border-[#c3a37a]'}`}>
+                  <Gift size={16} className="mb-2 text-[#735333]" />
+                  <p className="text-sm font-semibold">Cortesia</p>
+                  <p className="mt-1 text-xs leading-5 text-black/50">Hospedagem gratuita. Valor zerado, acomodacao bloqueada no periodo informado.</p>
+                </button>
+                <button type="button" onClick={() => setInternalMode('guest_pays')} className={`rounded-lg border p-4 text-left transition ${internalMode === 'guest_pays' ? 'border-[#3a6b4a] bg-emerald-50' : 'border-black/10 bg-white hover:border-[#c3a37a]'}`}>
+                  <CreditCard size={16} className="mb-2 text-[#735333]" />
+                  <p className="text-sm font-semibold">Pago pelo hospede</p>
+                  <p className="mt-1 text-xs leading-5 text-black/50">O hospede realiza o pagamento. Fluxo mock PIX ou cartao de credito.</p>
+                </button>
+              </div>
 
-            {paymentMethod === 'pix' ? (
-              <div className="mt-4 rounded-lg border border-black/8 bg-[#faf7f0] p-4">
-                <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-black/35">Chave PIX demonstrativa</p>
-                <p className="mt-2 font-mono text-sm text-black/65">pix.mock.casarao.{accommodation.id}.{checkIn}</p>
+              {internalMode === 'owner_paid' && (
+                <div className="mt-4 rounded-lg border border-[#9d7a4f]/25 bg-[#efe4d4]/30 p-4">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-[#735333]">Pagamento pelo responsavel</p>
+                  <p className="mt-2 text-sm text-black/65">Nenhum gateway sera acionado. O valor total sera registrado como pago pelo responsavel do hotel.</p>
+                </div>
+              )}
+
+              {internalMode === 'courtesy' && (
+                <div className="mt-4 rounded-lg border border-[#9d7a4f]/25 bg-[#efe4d4]/30 p-4">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-[#735333]">Cortesia registrada</p>
+                  <p className="mt-2 text-sm text-black/65">A hospedagem sera registrada com valor zero. A acomodacao ficara bloqueada no periodo e o hospede recebera o e-mail de confirmacao.</p>
+                </div>
+              )}
+
+              {internalMode === 'guest_pays' && (
+                <div className="mt-4 space-y-4">
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <button type="button" onClick={() => setPaymentMethod('pix')} className={`rounded-lg border p-4 text-left transition ${paymentMethod === 'pix' ? 'border-[#3a6b4a] bg-emerald-50' : 'border-black/10 bg-white hover:border-[#c3a37a]'}`}>
+                      <p className="text-sm font-semibold">PIX aprovado na hora</p>
+                      <p className="mt-1 text-xs leading-5 text-black/50">Gera uma chave demonstrativa e confirma a hospedagem sem gateway real.</p>
+                    </button>
+                    <button type="button" onClick={() => setPaymentMethod('credit_card')} className={`rounded-lg border p-4 text-left transition ${paymentMethod === 'credit_card' ? 'border-[#3a6b4a] bg-emerald-50' : 'border-black/10 bg-white hover:border-[#c3a37a]'}`}>
+                      <p className="text-sm font-semibold">Cartao de credito mockado</p>
+                      <p className="mt-1 text-xs leading-5 text-black/50">Valida somente os dados basicos e registra pagamento aprovado.</p>
+                    </button>
+                  </div>
+                  {paymentMethod === 'pix' ? (
+                    <div className="rounded-lg border border-black/8 bg-[#faf7f0] p-4">
+                      <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-black/35">Chave PIX demonstrativa</p>
+                      <p className="mt-2 font-mono text-sm text-black/65">pix.mock.casarao.{accommodation.id}.{checkIn}</p>
+                    </div>
+                  ) : (
+                    <div className="grid gap-4 md:grid-cols-3">
+                      <Field label="Nome no cartao" icon={Users}><input value={cardHolder} onChange={e => setCardHolder(e.target.value)} /></Field>
+                      <Field label="Ultimos 4 digitos" icon={CreditCard}><input value={cardLastFour} onChange={e => setCardLastFour(e.target.value.replace(/\D/g, '').slice(0, 4))} inputMode="numeric" placeholder="1234" /></Field>
+                      <Field label="Parcelas" icon={CreditCard}><input type="number" min={1} max={6} value={installments} onChange={e => setInstallments(Math.min(6, Math.max(1, Number(e.target.value))))} /></Field>
+                    </div>
+                  )}
+                </div>
+              )}
+            </Panel>
+          ) : (
+            <Panel title="Pagamento mockado" icon={CreditCard}>
+              <div className="grid gap-3 md:grid-cols-2">
+                <button type="button" onClick={() => setPaymentMethod('pix')} className={`rounded-lg border p-4 text-left transition ${paymentMethod === 'pix' ? 'border-[#3a6b4a] bg-emerald-50' : 'border-black/10 bg-white hover:border-[#c3a37a]'}`}>
+                  <p className="text-sm font-semibold">PIX aprovado na hora</p>
+                  <p className="mt-1 text-xs leading-5 text-black/50">Gera uma chave demonstrativa e confirma a hospedagem sem gateway real.</p>
+                </button>
+                <button type="button" onClick={() => setPaymentMethod('credit_card')} className={`rounded-lg border p-4 text-left transition ${paymentMethod === 'credit_card' ? 'border-[#3a6b4a] bg-emerald-50' : 'border-black/10 bg-white hover:border-[#c3a37a]'}`}>
+                  <p className="text-sm font-semibold">Cartao de credito mockado</p>
+                  <p className="mt-1 text-xs leading-5 text-black/50">Valida somente os dados basicos e registra pagamento aprovado.</p>
+                </button>
               </div>
-            ) : (
-              <div className="mt-4 grid gap-4 md:grid-cols-3">
-                <Field label="Nome no cartao" icon={Users}><input value={cardHolder} onChange={e => setCardHolder(e.target.value)} /></Field>
-                <Field label="Ultimos 4 digitos" icon={CreditCard}><input value={cardLastFour} onChange={e => setCardLastFour(e.target.value.replace(/\D/g, '').slice(0, 4))} inputMode="numeric" placeholder="1234" /></Field>
-                <Field label="Parcelas" icon={CreditCard}><input type="number" min={1} max={6} value={installments} onChange={e => setInstallments(Math.min(6, Math.max(1, Number(e.target.value))))} /></Field>
-              </div>
-            )}
-          </Panel>
+
+              {paymentMethod === 'pix' ? (
+                <div className="mt-4 rounded-lg border border-black/8 bg-[#faf7f0] p-4">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-black/35">Chave PIX demonstrativa</p>
+                  <p className="mt-2 font-mono text-sm text-black/65">pix.mock.casarao.{accommodation.id}.{checkIn}</p>
+                </div>
+              ) : (
+                <div className="mt-4 grid gap-4 md:grid-cols-3">
+                  <Field label="Nome no cartao" icon={Users}><input value={cardHolder} onChange={e => setCardHolder(e.target.value)} /></Field>
+                  <Field label="Ultimos 4 digitos" icon={CreditCard}><input value={cardLastFour} onChange={e => setCardLastFour(e.target.value.replace(/\D/g, '').slice(0, 4))} inputMode="numeric" placeholder="1234" /></Field>
+                  <Field label="Parcelas" icon={CreditCard}><input type="number" min={1} max={6} value={installments} onChange={e => setInstallments(Math.min(6, Math.max(1, Number(e.target.value))))} /></Field>
+                </div>
+              )}
+            </Panel>
+          )}
         </section>
 
         <aside className="self-start rounded-lg border border-black/8 bg-[#151d18] p-5 text-white shadow-2xl md:sticky md:top-6">
@@ -359,14 +495,49 @@ export function BookingPortal({ onBack }: { onBack: () => void }) {
 
           <div className="border-t border-white/10 pt-5">
             <div className="flex items-end justify-between">
-              <span className="text-sm text-white/55">Total previsto</span>
-              <strong className="font-serif text-3xl font-normal">{BRL.format(total)}</strong>
+              <span className="text-sm text-white/55">
+                {isMaster && internalMode === 'courtesy' ? 'Valor de referencia' : 'Total previsto'}
+              </span>
+              <strong className="font-serif text-3xl font-normal">
+                {isMaster && internalMode === 'courtesy' ? 'Cortesia' : BRL.format(displayTotal)}
+              </strong>
             </div>
-            <button type="submit" disabled={submitting || auth.loading} className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg bg-[#d7b98d] py-4 text-xs font-bold uppercase tracking-[0.22em] text-[#15100b] transition hover:bg-[#e4caa4] disabled:cursor-not-allowed disabled:opacity-60">
+            {isMaster && internalMode === 'courtesy' && (
+              <p className="mt-1 text-right text-xs text-white/35 line-through">{BRL.format(total)}</p>
+            )}
+            {!isMaster && (
+              <label className="mt-5 flex cursor-pointer items-start gap-3 text-xs leading-5 text-white/60">
+                <input
+                  type="checkbox"
+                  checked={lgpdConsent}
+                  onChange={event => setLgpdConsent(event.target.checked)}
+                  className="mt-0.5 h-4 w-4 shrink-0 accent-[#d7b98d]"
+                />
+                <span>
+                  Autorizo o tratamento dos meus dados pessoais (nome, CPF e contato) para a
+                  gestao desta hospedagem, conforme a Lei Geral de Protecao de Dados (LGPD).
+                </span>
+              </label>
+            )}
+            <button type="submit" disabled={submitting || auth.loading || (!isMaster && canBook && !lgpdConsent)} className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg bg-[#d7b98d] py-4 text-xs font-bold uppercase tracking-[0.22em] text-[#15100b] transition hover:bg-[#e4caa4] disabled:cursor-not-allowed disabled:opacity-60">
               <CreditCard size={16} />
-              {!canBook ? 'Entrar para reservar' : submitting ? 'Processando...' : `Pagar com ${paymentMethod === 'pix' ? 'PIX' : 'cartao'}`}
+              {!canBook
+                ? 'Entrar para reservar'
+                : submitting
+                  ? 'Processando...'
+                  : isMaster
+                    ? internalMode === 'courtesy'
+                      ? 'Registrar cortesia'
+                      : internalMode === 'owner_paid'
+                        ? 'Registrar hospedagem'
+                        : `Pagar com ${paymentMethod === 'pix' ? 'PIX' : 'cartao'}`
+                    : `Pagar com ${paymentMethod === 'pix' ? 'PIX' : 'cartao'}`}
             </button>
-            <p className="mt-3 text-xs leading-5 text-white/42">Pagamento temporariamente mockado. A confirmacao libera o Portal do Hospede e registra o e-mail de instrucoes.</p>
+            <p className="mt-3 text-xs leading-5 text-white/42">
+              {isMaster
+                ? 'Hospedagem interna. A acomodacao sera bloqueada no sistema e o hospede recebera o e-mail de confirmacao.'
+                : 'Pagamento temporariamente mockado. A confirmacao libera o Portal do Hospede e registra o e-mail de instrucoes.'}
+            </p>
           </div>
         </aside>
       </form>
@@ -390,6 +561,7 @@ function BookingSuccess({
   checkOut,
   guests,
   redirectCountdown,
+  portalLabel,
   onEnterPortal,
   onNewBooking,
 }: {
@@ -399,6 +571,7 @@ function BookingSuccess({
   checkOut: string;
   guests: number;
   redirectCountdown: number;
+  portalLabel: string;
   onEnterPortal: () => void;
   onNewBooking: () => void;
 }) {
@@ -474,7 +647,7 @@ function BookingSuccess({
 
               <div className="mt-6 flex flex-col gap-3">
                 <button onClick={onEnterPortal} className="rounded-lg bg-[#20140d] py-4 text-xs font-bold uppercase tracking-[0.22em] text-white transition hover:bg-[#3a2a1f]">
-                  Entrar no portal do hospede
+                  {portalLabel}
                 </button>
                 <button onClick={onNewBooking} className="rounded-lg border border-black/10 py-3 text-xs font-bold uppercase tracking-[0.18em] text-black/55 transition hover:border-black/25">
                   Fazer outra reserva

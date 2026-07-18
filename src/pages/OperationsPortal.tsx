@@ -7,6 +7,7 @@ import {
   ClipboardList,
   ConciergeBell,
   CreditCard,
+  Download,
   Gauge,
   LineChart,
   Shield,
@@ -17,6 +18,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { getOperationsSummary } from '../services/operations';
+import { centsToBrl, downloadCsv } from '../lib/csv';
 import type { PermissionSet } from '../types/auth';
 import type { AppPage } from '../types/navigation';
 import type { OperationsSummary } from '../types/operations';
@@ -29,10 +31,13 @@ interface ModuleItem {
   page: AppPage;
   permission?: keyof PermissionSet;
   icon: LucideIcon;
+  masterOnly?: boolean;
+  hideForMaster?: boolean;
 }
 
 const MODULES: ModuleItem[] = [
-  { title: 'Hospedagens', description: 'Criar reservas, validar disponibilidade e acompanhar check-ins.', page: 'booking', permission: 'bookings', icon: BedDouble },
+  { title: 'Gerar Hospedagem', description: 'Registre ocupacoes internas, cortesias e reservas pagas pelo responsavel.', page: 'booking', icon: BedDouble, masterOnly: true },
+  { title: 'Hospedagens', description: 'Criar reservas, validar disponibilidade e acompanhar check-ins.', page: 'booking', permission: 'bookings', icon: BedDouble, hideForMaster: true },
   { title: 'Recepcao', description: 'Check-in/out digital, ocupacao em tempo real, quartos e chaves.', page: 'frontdesk', permission: 'bookings', icon: ConciergeBell },
   { title: 'Atendimento', description: 'Pedidos do hospede, frigobar, pagamentos e solicitacoes.', page: 'attendant', permission: 'roomService', icon: ConciergeBell },
   { title: 'Cozinha', description: 'Restaurante, PDV, comandas, estoque, caixa e relatorios.', page: 'kitchen', permission: 'kitchen', icon: ChefHat },
@@ -63,10 +68,54 @@ export function OperationsPortal({ onBack, onNavigate }: { onBack: () => void; o
     return () => { mounted = false; };
   }, [allowed]);
 
+  const exportBookings = () => {
+    if (!summary) return;
+    const headers = ['Codigo', 'Hospede', 'Acomodacao', 'Check-in', 'Check-out', 'Hospedes', 'Status', 'Total (R$)'];
+    const rows = (summary.recentBookings || []).map(booking => [
+      booking.confirmationCode,
+      booking.guest || 'Hospede',
+      booking.accommodation || '',
+      booking.checkIn,
+      booking.checkOut,
+      booking.guestsCount,
+      booking.status,
+      summary.canViewFinancial ? centsToBrl(booking.total) : 'Restrito',
+    ]);
+    downloadCsv('hospedagens-recentes', headers, rows);
+  };
+
+  const exportKpis = () => {
+    if (!summary) return;
+    const headers = ['Indicador', 'Valor'];
+    const rows: Array<Array<unknown>> = [
+      ['Hospedes ativos', summary.activeGuests],
+      ['Hospedagens ativas', summary.activeBookings],
+      ['Reservas no mes', summary.monthBookings],
+      ['Taxa de ocupacao (%)', summary.occupancyRate],
+      ['UHs ocupadas', summary.occupiedRooms],
+      ['UHs totais', summary.totalRooms],
+      ['Diarias vendidas no mes', summary.roomNightsMonth],
+    ];
+    if (summary.canViewFinancial) {
+      rows.push(
+        ['Receita total (R$)', centsToBrl(summary.monthRevenue)],
+        ['Receita hospedagem (R$)', centsToBrl(summary.lodgingRevenue)],
+        ['Receita consumos/adicionais (R$)', centsToBrl(summary.consumptionRevenue)],
+        ['Receita restaurante (R$)', centsToBrl(summary.restaurantRevenue)],
+        ['Ticket medio (R$)', centsToBrl(summary.averageTicket)],
+        ['Diaria media - ADR (R$)', centsToBrl(summary.adr)],
+        ['RevPAR (R$)', centsToBrl(summary.revpar)],
+      );
+    }
+    downloadCsv('indicadores-mes', headers, rows);
+  };
+
   const modules = useMemo(() => {
     const isMaster = role === 'master';
     const isAdmin = role === 'admin';
     return MODULES.filter(item => {
+      if (item.masterOnly && !isMaster && !isAdmin) return false;
+      if (item.hideForMaster && (isMaster || isAdmin)) return false;
       if (!item.permission) return true;
       if (isMaster || isAdmin) return true;
       return Boolean(permissions[item.permission]);
@@ -91,9 +140,16 @@ export function OperationsPortal({ onBack, onNavigate }: { onBack: () => void; o
       <header className="border-b border-black/8 bg-[#121a16] px-5 py-5 text-white md:px-10">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
           <button onClick={onBack} className="flex h-11 w-11 items-center justify-center rounded-full border border-white/20 hover:bg-white/10"><ArrowLeft size={18} /></button>
-          <div className="text-right">
-            <p className="text-[10px] font-bold uppercase tracking-[0.32em] text-[#d7b98d]">Acesso da equipe</p>
-            <h1 className="font-serif text-3xl">Operacao e CRM</h1>
+          <div className="flex items-center gap-3">
+            {summary && (
+              <button onClick={exportKpis} className="hidden items-center gap-2 rounded-full border border-white/20 px-4 py-2 text-xs font-semibold text-white/90 hover:bg-white/10 md:inline-flex">
+                <Download size={14} /> Exportar indicadores
+              </button>
+            )}
+            <div className="text-right">
+              <p className="text-[10px] font-bold uppercase tracking-[0.32em] text-[#d7b98d]">Acesso da equipe</p>
+              <h1 className="font-serif text-3xl">Operacao e CRM</h1>
+            </div>
           </div>
         </div>
       </header>
@@ -108,6 +164,29 @@ export function OperationsPortal({ onBack, onNavigate }: { onBack: () => void; o
           <Metric icon={CreditCard} label="Ticket medio" value={summaryLoading ? '...' : (summary?.canViewFinancial ? BRL.format((summary.averageTicket || 0) / 100) : 'Restrito')} />
         </div>
 
+        {/* Occupancy — visible to the whole team */}
+        <section className="mt-4 rounded-lg border border-black/8 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#efe4d4] text-[#735333]"><Gauge size={18} /></span>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-black/35">Taxa de ocupacao</p>
+                <p className="font-serif text-2xl">
+                  {summaryLoading ? '...' : `${summary?.occupancyRate ?? 0}%`}
+                  <span className="ml-2 text-sm font-sans text-black/45">{summaryLoading ? '' : `${summary?.occupiedRooms ?? 0} de ${summary?.totalRooms ?? 0} UHs`}</span>
+                </p>
+              </div>
+            </div>
+            <div className="hidden md:block text-right">
+              <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-black/35">Diarias vendidas no mes</p>
+              <p className="font-serif text-2xl">{summaryLoading ? '...' : (summary?.roomNightsMonth ?? 0)}</p>
+            </div>
+          </div>
+          <div className="mt-4 h-2.5 w-full overflow-hidden rounded-full bg-black/8">
+            <div className="h-full rounded-full bg-[#3a6b4a] transition-all" style={{ width: `${Math.min(100, summary?.occupancyRate ?? 0)}%` }} />
+          </div>
+        </section>
+
         {summary?.canViewFinancial && (
           <section className="mt-6 rounded-lg border border-black/8 bg-[#151d18] p-5 text-white shadow-sm">
             <div className="mb-5 flex items-center gap-3">
@@ -121,7 +200,11 @@ export function OperationsPortal({ onBack, onNavigate }: { onBack: () => void; o
               <Finance label="Receita total" value={summary.monthRevenue} />
               <Finance label="Hospedagens" value={summary.lodgingRevenue} />
               <Finance label="Consumos e adicionais" value={summary.consumptionRevenue} />
+              <Finance label="Restaurante" value={summary.restaurantRevenue} />
+              <Finance label="Diaria media (ADR)" value={summary.adr} />
+              <Finance label="RevPAR" value={summary.revpar} />
             </div>
+            <p className="mt-3 text-[11px] text-white/35">ADR = receita de hospedagem / diarias vendidas. RevPAR = receita de hospedagem / diarias disponiveis no mes ate hoje.</p>
           </section>
         )}
 
@@ -136,7 +219,14 @@ export function OperationsPortal({ onBack, onNavigate }: { onBack: () => void; o
         </section>
 
         <section className="mt-6 rounded-lg border border-black/8 bg-white p-5 shadow-sm">
-          <h2 className="font-serif text-2xl">Hospedagens recentes</h2>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="font-serif text-2xl">Hospedagens recentes</h2>
+            {!summaryLoading && (summary?.recentBookings?.length ?? 0) > 0 && (
+              <button onClick={exportBookings} className="inline-flex items-center gap-2 rounded-full border border-black/12 px-3 py-1.5 text-xs font-semibold text-black/60 hover:border-[#c3a37a] hover:text-[#735333]">
+                <Download size={13} /> CSV
+              </button>
+            )}
+          </div>
           <div className="mt-4 space-y-3">
             {summaryLoading ? (
               Array.from({ length: 3 }, (_, i) => (

@@ -18,7 +18,9 @@ type Action =
   | 'emit_key'
   | 'save_guest_profile'
   | 'get_guest_history'
-  | 'save_incident';
+  | 'save_incident'
+  | 'pending_payments'
+  | 'confirm_payment';
 
 const ASSIGNMENT_ACTIVE = ['reservado', 'checked_in'];
 const KEY_TYPES = ['emitida', 'reemitida', 'devolvida', 'bloqueada'];
@@ -541,6 +543,70 @@ async function saveIncident(supabase: ReturnType<typeof createClient>, userId: s
   return data;
 }
 
+// Bookings awaiting payment (e.g. PIX not yet confirmed by the gateway).
+async function pendingPayments(supabase: ReturnType<typeof createClient>) {
+  const { data, error } = await supabase
+    .from('bookings')
+    .select('id, confirmation_code, total, check_in, check_out, payment_status, accommodations(name), guests(name, phone)')
+    .eq('payment_status', 'pending')
+    .order('check_in', { ascending: true })
+    .limit(100);
+  if (error) throw error;
+  return (data || []).map(booking => {
+    const accommodation = Array.isArray(booking.accommodations) ? booking.accommodations[0] : booking.accommodations;
+    const guest = Array.isArray(booking.guests) ? booking.guests[0] : booking.guests;
+    return {
+      id: booking.id,
+      confirmationCode: booking.confirmation_code,
+      total: booking.total,
+      checkIn: booking.check_in,
+      checkOut: booking.check_out,
+      paymentStatus: booking.payment_status,
+      accommodation: accommodation?.name || '',
+      guest: guest?.name || 'Hospede',
+      phone: guest?.phone || '',
+    };
+  });
+}
+
+// Manual confirmation — the guest paid PIX and the team confirms receipt.
+async function confirmPayment(supabase: ReturnType<typeof createClient>, userId: string, payload: Record<string, unknown>) {
+  const bookingId = String(payload.booking_id || payload.bookingId || '');
+  if (!bookingId) throw new Error('Hospedagem nao informada.');
+  const now = new Date().toISOString();
+
+  const { error: bookingError } = await supabase
+    .from('bookings')
+    .update({ payment_status: 'paid' })
+    .eq('id', bookingId);
+  if (bookingError) throw bookingError;
+
+  const { data: payment } = await supabase
+    .from('booking_payments')
+    .select('id')
+    .eq('booking_id', bookingId)
+    .order('created_at', { ascending: false })
+    .maybeSingle();
+
+  if (payment) {
+    await supabase.from('booking_payments')
+      .update({ status: 'paid', paid_at: now, confirmed_by: userId, provider: 'manual', updated_at: now })
+      .eq('id', payment.id);
+  } else {
+    await supabase.from('booking_payments').insert({
+      booking_id: bookingId, method: 'pix', amount: 0, status: 'paid', provider: 'manual',
+      paid_at: now, confirmed_by: userId,
+    });
+  }
+
+  await supabase.from('audit_logs').insert({
+    entity: 'bookings', entity_id: bookingId, action: 'payment_confirmed_manual',
+    metadata: { by: userId, source: 'frontdesk' },
+  });
+
+  return { bookingId, paymentStatus: 'paid' };
+}
+
 Deno.serve(async req => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (req.method !== 'POST') return json({ error: 'Metodo nao permitido.' }, 405);
@@ -590,6 +656,12 @@ Deno.serve(async req => {
         break;
       case 'save_incident':
         data = await saveIncident(supabase, userId, payload);
+        break;
+      case 'pending_payments':
+        data = await pendingPayments(supabase);
+        break;
+      case 'confirm_payment':
+        data = await confirmPayment(supabase, userId, payload);
         break;
       default:
         return json({ error: 'Acao invalida.' }, 400);

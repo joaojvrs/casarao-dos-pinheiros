@@ -26,3 +26,9 @@ verify_jwt = true
 
 [functions.frontdesk-operations]
 verify_jwt = true
+
+[functions.attendant-operations]
+verify_jwt = true
+
+[functions.payment-webhook]
+verify_jwt = false
